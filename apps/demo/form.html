@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fieldnotes | Support request</title>
+    <link rel="stylesheet" href="form.css" />
+    <script defer src="form.js"></script>
+  </head>
+  <body>
+    <header class="topbar"><a class="brand" href="/demo/">fieldnotes<span>®</span></a><div class="account"><span class="avatar">J</span> Jordan Lee</div></header>
+    <main class="layout">
+      <aside class="context"><p class="eyebrow">FIELDNOTES / WORKSPACE</p><h1>Give your team enough context to help.</h1><p>This practice request is stored only in this browser. It will not be sent anywhere.</p><a href="/demo/tutorial.html?scenario=form">Open the spoken walkthrough ↗</a></aside>
+      <section class="form-card" aria-labelledby="form-title">
+        <div class="card-head"><div><p class="eyebrow">CUSTOMER SUPPORT</p><h2 id="form-title">New support request</h2></div><span class="safe-pill">Practice space</span></div>
+        <form id="support-form">
+          <label for="project-name">Project name</label><input id="project-name" name="projectName" autocomplete="off" placeholder="e.g. Webb Demo" />
+          <label for="request-type">What do you need help with?</label><select id="request-type" name="requestType"><option value="">Choose a topic</option><option>Team access</option><option>Billing</option><option>Deployment</option></select>
+          <label for="request-message">Tell us a little more</label><textarea id="request-message" name="message" rows="5" placeholder="Include the details that will help us respond."></textarea>
+          <div class="form-foot"><p>Webb can prepare this form. Sending always needs your approval.</p><button type="submit">Send request</button></div>
+          <p id="form-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+ASSEMBLYAI_API_KEY=replace-me
+GROQ_API_KEY=replace-me
+# Website origins can be comma-separated. Valid Chrome extension IDs are accepted by format.
+ALLOWED_ORIGINS=https://webb-five-puce.vercel.app

@@ -1,0 +1,12 @@
+node_modules/
+.output/
+.wxt/
+.wrangler/
+*.log
+.env*
+!.env.example
+.dev.vars
+.gstack/
+apps/site/dist/
+.vercel/
+release/

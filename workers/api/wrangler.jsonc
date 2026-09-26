@@ -1,0 +1,34 @@
+{
+  "name": "webb-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "vars": {
+    "ALLOWED_ORIGINS": "https://webb-five-puce.vercel.app"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "WEBB_SESSIONS", "class_name": "WebbSession" }
+    ]
+  },
+  "exports": {
+    "WebbSession": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "ratelimits": [
+    {
+      "name": "TOKEN_LIMITER",
+      "namespace_id": "816203751",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "PLAN_LIMITER",
+      "namespace_id": "816203752",
+      "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "name": "SESSION_LIMITER",
+      "namespace_id": "816203753",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
+  "observability": { "enabled": true }
+}

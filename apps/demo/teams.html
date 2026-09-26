@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workroom | Project channel</title>
+    <link rel="stylesheet" href="teams.css" />
+    <script defer src="teams.js"></script>
+  </head>
+  <body>
+    <aside class="rail"><div class="workspace-logo">w</div><button class="rail-item active" aria-label="Chat">◫</button><button class="rail-item" aria-label="Calendar">▦</button><button class="rail-item" aria-label="Files">▤</button><div class="rail-bottom">JL</div></aside>
+    <aside class="channels"><div class="workspace"><span class="team-mark">O</span><span><strong>Orbit Studio</strong><small>Project workspace</small></span><span>⌄</span></div><p class="eyebrow">CHANNELS</p><nav><a href="#general">#&nbsp; general</a><a href="#launch" aria-current="page">#&nbsp; launch-planning</a><a href="#design">#&nbsp; design</a></nav><div class="channels-note"><strong>Practice workspace</strong><p>Messages stay on this demo page. Webb will wait for you before sending.</p><a href="/demo/tutorial.html?scenario=teams">Open the spoken walkthrough ↗</a></div></aside>
+    <main class="chat">
+      <header class="chat-head"><div><p class="eyebrow">ORBIT STUDIO / CHANNEL</p><h1># launch-planning</h1></div><div class="members"><span>●</span><span>3 people</span></div></header>
+      <section class="feed" aria-label="Channel conversation"><article class="message"><div class="person ava-one">AR</div><div><div class="message-meta"><strong>Avery Reed</strong><time>10:12</time></div><p>Release checklist is looking good. I added the updated onboarding flow.</p></div></article><article class="message"><div class="person ava-two">MK</div><div><div class="message-meta"><strong>Morgan Kim</strong><time>10:18</time></div><p>Thanks. Let’s share the final handoff once QA finishes.</p></div></article><div id="posted-messages" aria-live="polite"></div></section>
+      <form id="compose-form" class="composer"><label for="compose-message">Write a message in launch-planning</label><textarea id="compose-message" name="message" rows="3" placeholder="Message the channel…"></textarea><div class="composer-foot"><span>Enter details here. Webb will ask before posting.</span><button type="submit">Send message</button></div><p id="send-status" role="status"></p></form>
+    </main>
+  </body>
+</html>
