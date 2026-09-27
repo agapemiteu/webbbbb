@@ -1,6 +1,6 @@
 # Webb session handoff
 
-Updated: 2026-09-26
+Updated: 2026-09-27
 
 ## Product
 
@@ -22,10 +22,11 @@ Keep the product focused on converting speech plus current page state into verif
 - Site: https://webb-five-puce.vercel.app/
 - Practice pages: https://webb-five-puce.vercel.app/demo/
 - Worker: https://webb-api.collins-coordinator-worker.workers.dev
-- Source repository: https://github.com/agapemiteu/webb (check visibility before sharing; it was private at the last GitHub check).
-- Chrome extension is not in the Chrome Web Store. Install the unpacked build from GitHub source or use the attached ZIP after the source is public.
+- Public source repository: https://github.com/agapemiteu/webb
+- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.1.0/webb-0.1.0.zip
+- Chrome extension is not in the Chrome Web Store. Install the ZIP with Chrome Developer mode, or clone the source and build it.
 
-The site was redeployed on 2026-09-26 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Checks so far: `/health` returns 200, `/assemblyai-token` returns 200 with site CORS, and a live Groq request returned a high-confidence click plan for a synthetic Connections link. No credential values were printed. Live Chrome microphone streaming, Gmail behavior, and sending a real email have not been verified.
+The site was redeployed on 2026-09-26 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Checks so far: `/health` returns 200, `/assemblyai-token` returns 200 with site CORS, and a live Groq request returned a 0.95 confidence click plan for a synthetic Connections link. The GitHub repository is public and contains commit `4f286e7`. Release `v0.1.0` includes the built extension ZIP. No credential values were printed. Live Chrome microphone streaming, Gmail behavior, and sending a real email have not been verified.
 
 ## Safety and demo limits
 
@@ -47,9 +48,9 @@ Passed during this release:
 
 Still required for full end-to-end proof:
 
-- Load `.output/chrome-mv3` in Chrome, permit microphone access, and test TALK and FOLLOW with the live Worker.
+- Load the release ZIP in Chrome, permit microphone access, and test TALK and FOLLOW with the live Worker.
 - Test tab capture from YouTube, navigation to Gmail, and an explicitly confirmed email send to a test address.
-- Publish the GitHub repository after verifying no secrets are staged. Chrome Web Store publication requires a publisher account and is intentionally deferred.
+- Chrome Web Store publication requires a publisher account and is intentionally deferred.
 
 ## Commands
 
@@ -62,4 +63,4 @@ npm run typecheck
 npm test
 ```
 
-Keep local credentials in ignored `workers/api/.dev.vars`. Never commit API keys, `.dev.vars`, or secret-bearing files. Before sharing, verify repository visibility, archive contents, and Git status.
+Local keys are configured in ignored `workers/api/.dev.vars`. Never commit API keys, `.dev.vars`, or secret-bearing files. The release archive and Git index were scanned for key-shaped strings before publication.
