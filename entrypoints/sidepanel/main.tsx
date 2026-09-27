@@ -6,6 +6,7 @@ import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
 import { clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
 import { requestedSkill, videoSource, type RecentRun, type SkillSource, type WebbSkill } from "../../src/skill-model";
+import { targetForFollow } from "../../src/follow-target";
 import "./style.css";
 
 type TabOption = { id: number; title: string };
@@ -76,6 +77,7 @@ function App() {
   const [followed, setFollowed] = useState<number | null>(null);
   const [micOn, setMicOn] = useState(false);
   const [partial, setPartial] = useState("");
+  const [latestTutorialText, setLatestTutorialText] = useState("");
   const [snapshot, setSnapshot] = useState<PageSnapshot | null>(null);
   const [message, setMessage] = useState(
     "Choose a target website to get started.",
@@ -213,6 +215,13 @@ function App() {
       return;
     }
     setPartial("");
+    if (turn.source === 'followed_tab') {
+      setLatestTutorialText(turn.text);
+      if (!targetRef.current || targetRef.current === followedRef.current) {
+        setMessage('Tutorial audio is working. Choose a different target website before Webb acts.');
+        return;
+      }
+    }
     if (turn.source === 'user' && viewRef.current.skill?.status !== 'needs_value') {
       const skill = requestedSkill(turn.text, skillsRef.current);
       if (skill !== undefined) {
@@ -280,18 +289,18 @@ function App() {
     try {
       if (!tab?.id || !tab.url?.startsWith("http"))
         throw new Error("Activate the tutorial tab first.");
-      if (!targetRef.current || targetRef.current === tab.id)
-        throw new Error('Choose a target website tab that is different from the tutorial.');
       const [active] = await browser.tabs.query({ active: true, currentWindow: true });
       if (active?.id !== tab.id) throw new Error('Activate the video tab before starting FOLLOW.');
-      if (targetRef.current === tab.id) { targetRef.current = null; setTarget(null); }
+      const safeTarget = targetForFollow(targetRef.current, tab.id);
+      if (safeTarget !== targetRef.current) { targetRef.current = safeTarget; setTarget(safeTarget); setSnapshot(null); }
       const source = videoSource(tab.title || 'Tutorial', tab.url);
       if (!source) throw new Error('This tab cannot be followed. Choose a website with audio.');
+      setLatestTutorialText('');
       await browser.storage.local.remove('webbFollowNotice');
       await browser.storage.local.set({ webbPendingFollow: { tabId: tab.id, apiBase: apiRef.current, source, requestedAt: Date.now() } satisfies PendingFollow });
       await browser.storage.local.remove('webbFollowSuggestion');
       setFollowSuggestion(null);
-      setMessage('Click the pinned Webb toolbar icon on this tutorial tab to start FOLLOW.');
+      setMessage('Click the pinned Webb toolbar icon on this tutorial tab to start listening.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Follow failed");
     }
@@ -319,6 +328,7 @@ function App() {
       } catch { setMessage('FOLLOW stopped. The skill could not be saved.'); }
     } else setMessage("Stopped following tutorial audio.");
     setFollowed(null);
+    setLatestTutorialText('');
     coordinator.current?.setFollowedTab(null);
   }
   async function cancelFollowSetup() {
@@ -497,7 +507,7 @@ function App() {
             <span>01 / SETUP</span>
           </div>
           <p className="section-intro">
-            Choose the website Webb should control. On the tutorial tab, select Follow, then click Webb's toolbar icon to allow tab audio.
+            On the tutorial tab, select Follow and click Webb's toolbar icon to start listening. Choose a separate target website before Webb acts.
           </p>
           <div className="target-control">
             <label htmlFor="target-tab">TARGET WEBSITE</label>
@@ -537,6 +547,7 @@ function App() {
             <Icon name="arrow" size={17} />
           </button>
           {pendingFollow && <p className="follow-instruction" role="status"><strong>One more click:</strong> Click the pinned Webb icon in Chrome's toolbar while the tutorial tab is active. Webb will start listening and show FOLLOWING here.</p>}
+          {followed && latestTutorialText && <p className="follow-instruction" role="status"><strong>Just heard:</strong> {latestTutorialText}{!target && <><br />Choose a target website for browser actions.</>}</p>}
           <button className="text-button" onClick={inspect} disabled={!target || !consented}>
             <Icon name="refresh" size={14} /> Inspect page{" "}
             {snapshot ? `· ${snapshot.elements.length} controls found` : ""}
