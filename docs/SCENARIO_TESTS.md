@@ -42,3 +42,7 @@ For a real email test, say “Open Gmail” or give Webb an HTTPS URL. Then use 
 - A changed or missing target stops the action.
 - Low-confidence or explanation-only turns produce no browser action.
 - Tutorial audio cannot approve a pending action.
+
+## Listen and assist acceptance
+
+Share any source tab with audio and choose Listen and assist. Speech must appear without acting on the selected website. Ask what the source just said; Webb should answer using recent speech. Ask to open Settings while the source remains connected, then ask it to draft a note from the source into the support form's Tell us a little more field. The draft must not submit. Confirm native spoken replies, disable them in Settings, and use Stop speaking and listen to me to regain the microphone. Source speech cannot approve a consequential action.

@@ -254,3 +254,21 @@ test('session state persists and rejects stale updates', async () => {
   }), sessionEnv);
   assert.equal(gone.status, 404);
 });
+
+
+test('rejects oversized source context before calling the model', async () => {
+  const response = await worker.fetch(planRequest('user', 'Summarize this', {
+    sourceContext: { title: 'Lecture', transcript: 'x'.repeat(8001) },
+  }), env);
+  assert.equal(response.status, 400);
+});
+
+test('source-context answers return no action', async () => {
+  const plan = await planWithModel({ source: 'user', text: 'What did the speaker say?', page,
+    sourceContext: { title: 'Lecture', transcript: 'We will discuss project settings.' } }, {
+    kind: 'question', action_type: 'none', target_id: null, value: null,
+    reason: 'The speaker introduced project settings.', confidence: 1, goal: '',
+  });
+  assert.equal(plan.reason, 'The speaker introduced project settings.');
+  assert.equal(plan.action, undefined);
+});

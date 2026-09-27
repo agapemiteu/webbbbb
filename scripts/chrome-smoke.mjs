@@ -141,7 +141,7 @@ if (process.env.WEBB_SHARE_TEST) {
   const sourceId = await panel.evaluate(`(async () => (await chrome.tabs.query({})).find(tab => tab.url?.includes('tutorial.html?qa=${runId}'))?.id)()`);
   if (!sourceId) throw new Error('Source tab was absent.');
   await panel.evaluate(`chrome.tabs.update(${sourceId}, {active:true})`);
-  const modeLabel = process.env.WEBB_SHARE_TEST === 'notes' ? 'Capture notes' : 'Act on instructions';
+  const modeLabel = process.env.WEBB_SHARE_TEST === 'notes' ? 'Listen and assist' : 'Act on instructions';
   await panel.evaluate(`(() => { const button = Array.from(document.querySelectorAll('.source-mode button')).find(item => item.textContent.includes(${JSON.stringify(modeLabel)})); if (button?.getAttribute('aria-pressed') !== 'true') button?.click(); })()`);
   await waitFor(panel, `document.querySelector('.source-mode button[aria-pressed="true"]')?.textContent.includes(${JSON.stringify(modeLabel)})`, `${modeLabel} mode`);
   const unhappy = process.env.WEBB_SHARE_TEST;
@@ -163,6 +163,16 @@ if (process.env.WEBB_SHARE_TEST) {
     throw error;
   }
   console.log('Source tab audio connected to AssemblyAI.');
+  if (process.env.WEBB_TTS_TEST === '1') {
+    const result = await panel.evaluate(`new Promise(resolve => {
+      const timeout = setTimeout(() => resolve('timeout'), 20000);
+      chrome.tts.speak('Webb is ready.', { lang: 'en-US', requiredEventTypes: ['end'], onEvent: event => {
+        if (['end', 'error'].includes(event.type)) { clearTimeout(timeout); resolve(event.type + (event.errorMessage || '')); }
+      } }, () => { if (chrome.runtime.lastError) { clearTimeout(timeout); resolve(chrome.runtime.lastError.message); } });
+    })`);
+    if (result !== 'end') throw new Error(`Native spoken reply failed: ${result}`);
+    console.log('Chrome native speech playback reached its completion event.');
+  }
   const audio = (await readFile(process.env.WEBB_AUDIO_WAV)).toString('base64');
   await tutorial.evaluate(`(() => { window.webbQaAudio = new Audio('data:audio/wav;base64,${audio}'); return window.webbQaAudio.play().then(() => true); })()`);
   if (process.env.WEBB_SHARE_TEST === 'notes') {
@@ -178,6 +188,29 @@ if (process.env.WEBB_SHARE_TEST) {
   await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
   await waitFor(panel, `document.querySelector('.dock-status')?.innerText.includes('Listening to')`, 'source question answer');
   console.log('Webb answered which source is playing.');
+  if (process.env.WEBB_SHARE_TEST === 'notes') {
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text: 'What did the source just ask us to open?' });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+    await waitFor(panel, `document.querySelector('[aria-label="Webb reply"]')?.innerText.toLowerCase().includes('settings')`, 'source-context answer', 30000);
+    if (await site.evaluate('location.hash') !== '') throw new Error('A source question performed an action.');
+    console.log('Webb answered from captured source context without performing an action.');
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text: 'Can you open Settings for me?' });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+    await waitFor(site, `location.hash === '#settings'`, 'direct request while source is playing', 30000);
+    console.log('Direct user request executed while the source stayed connected in Listen and assist.');
+    await site.command('Page.navigate', { url: `https://webb-five-puce.vercel.app/demo/form.html?qa=${runId}` });
+    await waitFor(site, `Boolean(document.querySelector('#request-message'))`, 'support form');
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text: 'Write a short note about what the source just said in the Tell us a little more field.' });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+    await waitFor(site, `document.querySelector('#request-message')?.value.toLowerCase().includes('settings')`, 'source-based field draft', 30000);
+    if (await site.evaluate(`document.querySelector('#form-status')?.innerText`) !== '') throw new Error('Draft was submitted without approval.');
+    console.log('Source context was drafted into a supported form field without submission.');
+
+  }
+
   if (process.env.WEBB_SCREENSHOT_PATH) {
     await panel.command('Emulation.setDeviceMetricsOverride', { width: 380, height: 900, deviceScaleFactor: 1, mobile: false });
     const shot = await panel.command('Page.captureScreenshot');

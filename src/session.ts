@@ -50,9 +50,10 @@ export class SessionCoordinator {
   private sessionId: string | null = null;
   private revision = 0;
   private syncQueue: Promise<void> = Promise.resolve();
+  private sourceContext: { title: string; transcript: string } | undefined;
   private activeSkill: { skill: WebbSkill; index: number } | null = null;
 
-  constructor(private readonly apiBase: () => string, private readonly targetTab: () => number | null, private readonly onChange: (view: SessionView) => void) {}
+  constructor(private readonly apiBase: () => string, private readonly targetTab: () => number | null, private readonly onChange: (view: SessionView) => void, private readonly onReply: (text: string) => void = () => {}) {}
 
   private update(patch: Partial<SessionView>) {
     this.view = { ...this.view, ...patch };
@@ -62,6 +63,13 @@ export class SessionCoordinator {
   private log(message: string) {
     this.update({ events: [message, ...this.view.events].slice(0, 20) });
   }
+
+  observeSource(title: string, text: string) {
+    const previous = this.sourceContext?.title === title ? this.sourceContext.transcript : '';
+    this.sourceContext = { title: title.slice(0, 300), transcript: `${previous}\n${text}`.trim().slice(-8000) };
+  }
+
+  resetSource() { this.sourceContext = undefined; }
 
   private async ensureSession() {
     if (this.sessionId) return;
@@ -105,6 +113,7 @@ export class SessionCoordinator {
 
   async clearSession() {
     this.generation++;
+    this.resetSource();
     this.activeSkill = null;
     this.clearGate();
     await this.syncQueue;
@@ -281,7 +290,9 @@ export class SessionCoordinator {
 
     this.update({ busy: true });
     try {
-      const page = await this.inspect();
+      const page = this.targetTab() ? await this.inspect() : {
+        url: 'https://webb-five-puce.vercel.app/', title: 'No target selected', elements: [],
+      };
       const context: PageSnapshot = {
         url: page.url,
         title: page.title,
@@ -291,7 +302,7 @@ export class SessionCoordinator {
       const response = await fetch(`${this.apiBase().replace(/\/$/, '')}/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: turn.source, text, page: context, procedure: this.view.procedure }),
+        body: JSON.stringify({ source: turn.source, text, page: context, procedure: this.view.procedure, ...(turn.source === 'user' ? { sourceContext: this.sourceContext } : {}) }),
       });
       if (!response.ok) throw new Error(`Planner unavailable (${response.status})`);
       const plan = await response.json() as Plan;
@@ -302,9 +313,11 @@ export class SessionCoordinator {
       }
       if (plan.kind !== 'instruction' || !plan.action) {
         this.log(plan.reason || 'No browser action needed.');
+        if (turn.source === 'user') this.onReply(plan.reason || 'No browser action is needed.');
         this.failSkill('No matching control was found.');
         return;
       }
+      if (!this.targetTab()) { this.onReply('Choose a target website for this action.'); return; }
       const action = plan.action;
       const expectedSkillStep = this.activeSkill?.skill.steps[this.activeSkill.index];
       if (expectedSkillStep && action.type !== expectedSkillStep.type) {
@@ -349,11 +362,13 @@ export class SessionCoordinator {
         if (this.view.skill) this.update({ skill: { ...this.view.skill, status: 'needs_confirmation' } });
         this.waitForUser();
         this.log(`NEEDS YOU: ${description}`);
+        this.onReply(`${description}. Say go ahead to confirm, or cancel.`);
         return;
       }
       await this.execute(action, false, description);
     } catch (error) {
       this.log(error instanceof Error ? error.message : 'Could not process speech.');
+      if (turn.source === 'user') this.onReply(error instanceof Error ? error.message : 'Could not process speech.');
       this.failSkill('Planning failed.');
       this.waitForUser();
     } finally {
@@ -446,6 +461,7 @@ export class SessionCoordinator {
         this.persist({ procedure: this.view.procedure, status: 'listening' });
         this.recordAction(action.id, true, `Navigated to ${finalUrl}`);
         this.log(`VERIFIED: ${description}`);
+        this.onReply(`Done. ${description}.`);
       } catch (error) {
         this.failAction(action, error instanceof Error ? error.message : 'Navigation failed.');
         this.log('Navigation failed. Action paused.');
@@ -506,6 +522,7 @@ export class SessionCoordinator {
     this.persist({ procedure: this.view.procedure, status: 'listening' });
     this.recordAction(action.id, true, description);
     this.log(`VERIFIED: ${description}`);
+    this.onReply(`Done. ${description}.`);
     if (!this.activeSkill) {
       const learned = stepFromVerifiedAction(action.type, target.role, target.text);
       if (learned) void rememberVerifiedStep(learned, before.url);

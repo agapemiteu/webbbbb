@@ -9,6 +9,9 @@ export class Transcriber {
   private stream: MediaStream | null = null;
   private processor: AudioWorkletNode | null = null;
   private stopping = false;
+  private muted = false;
+
+  setMuted(muted: boolean) { this.muted = muted; }
 
   constructor(
     private readonly source: Source,
@@ -66,7 +69,7 @@ export class Transcriber {
     const processor = new AudioWorkletNode(context, 'webb-pcm');
     this.processor = processor;
     processor.port.onmessage = event => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(event.data as ArrayBuffer);
+      if (socket.readyState === WebSocket.OPEN) socket.send(this.muted ? new ArrayBuffer((event.data as ArrayBuffer).byteLength) : event.data as ArrayBuffer);
     };
     source.connect(processor);
     processor.connect(context.destination);

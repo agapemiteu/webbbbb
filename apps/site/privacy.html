@@ -24,13 +24,13 @@
     <main class="policy">
       <p class="kicker">PRIVACY</p>
       <h1>Webb privacy policy</h1>
-      <p class="policy-date">Last updated September 27, 2026</p>
+      <p class="policy-date">Last updated September 28, 2026</p>
       <p>Webb is a Chrome extension that follows spoken instructions and helps carry them out on the web page you select. This policy explains what Webb handles when you use TALK or FOLLOW.</p>
 
       <h2>Data Webb handles</h2>
       <ul>
         <li><strong>Audio:</strong> Webb captures microphone audio in TALK or audio from the source tab you choose in FOLLOW, only after you start that mode and approve Chrome's tab-sharing prompt. Audio is streamed to AssemblyAI for speech transcription.</li>
-        <li><strong>Speech transcripts:</strong> In action mode, transcripts from you or the followed source are sent to Webb's Cloudflare Worker. The Worker may send the transcript to Groq to classify an instruction and propose a browser action. In notes mode, source transcripts stay in Chrome local storage.</li>
+        <li><strong>Speech transcripts:</strong> In action mode, transcripts from you or the followed source are sent to Webb's Cloudflare Worker. The Worker may send the transcript to Groq to classify an instruction and propose a browser action. In Listen and assist, source transcripts are saved locally. When you ask Webb a question or request an action, up to 8,000 characters of recent source speech are sent to the Worker and Groq as context. Spoken replies use Chrome speech synthesis.</li>
         <li><strong>Page context:</strong> When planning an action, Webb sends the target page URL, title, and visible interactive control roles and labels to the Worker and Groq. Existing form field values and password values are excluded from this page context. Webb does not fill password fields.</li>
         <li><strong>Session state:</strong> Cloudflare stores the transcript, procedure progress, page context, and action results for the active session. Session data expires after 24 hours without activity. You can withdraw consent in Webb's settings to stop capture and request deletion of the active session.</li>
         <li><strong>Local memory:</strong> Chrome local storage holds your settings, active session identifier, last followed source title and URL, captured notes, and saved skills. Skills contain verified control labels and roles, not field values. Webb asks for new values when replaying a form step. Withdrawing consent clears this local memory.</li>
@@ -43,7 +43,7 @@
       <p>AssemblyAI processes audio to produce transcripts. Groq processes transcript and page context to produce a structured action proposal. Cloudflare hosts Webb's API and temporary session storage. These providers process data to provide Webb's requested features under their own service terms and privacy policies.</p>
 
       <h2>Your choices</h2>
-      <p>Before Webb starts capture or page inspection, it shows a data disclosure and asks you to agree. When a page plays a video, Webb may offer a button to open FOLLOW. Tab audio capture starts after you select FOLLOW and click Webb's Chrome toolbar icon on the tutorial tab. You can stop TALK or FOLLOW at any time. In settings, choose <strong>Withdraw consent and stop Webb</strong> to stop capture, clear local skills, and request deletion of the current cloud session. Data already sent may remain with the service providers under their applicable retention policies. Webb's own session data is scheduled to expire within 24 hours after its last activity.</p>
+      <p>Before Webb starts capture or page inspection, it shows a data disclosure and asks you to agree. When a page plays a video, Webb may offer a button to open FOLLOW. Tab audio capture starts after you press Start listening and approve Chrome's sharing dialog with Share tab audio enabled. You can stop TALK or FOLLOW at any time. In settings, choose <strong>Withdraw consent and stop Webb</strong> to stop capture, clear local skills, and request deletion of the current cloud session. Data already sent may remain with the service providers under their applicable retention policies. Webb's own session data is scheduled to expire within 24 hours after its last activity.</p>
 
       <h2>Security</h2>
       <p>Provider API keys stay on the Worker. Audio and requests to the hosted Worker use encrypted connections. The extension acts only on the page you select, and consequential actions require direct user confirmation.</p>

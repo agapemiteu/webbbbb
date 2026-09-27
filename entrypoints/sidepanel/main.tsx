@@ -80,13 +80,20 @@ function App() {
   const [micPermissionIssue, setMicPermissionIssue] = useState(false);
   const [partial, setPartial] = useState("");
   const [latestTutorialText, setLatestTutorialText] = useState("");
-  const [followMode, setFollowMode] = useState<'actions' | 'notes'>('actions');
+  const [followMode, setFollowMode] = useState<'actions' | 'notes'>('notes');
   const [sourceNotes, setSourceNotes] = useState<string[]>([]);
   const [snapshot, setSnapshot] = useState<PageSnapshot | null>(null);
   const [message, setMessage] = useState(
     "Choose a target website to get started.",
   );
   const [draft, setDraft] = useState("");
+  const [spokenReplies, setSpokenReplies] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
+  const [reply, setReply] = useState("");
+  const spokenRepliesRef = useRef(true);
+  const speechGeneration = useRef(0);
+  const speakingRef = useRef(false);
+  const speechTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [consented, setConsented] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -130,7 +137,49 @@ function App() {
       () => apiRef.current,
       () => targetRef.current,
       setView,
+      respond,
     );
+
+  function stopReply() {
+    speechGeneration.current++;
+    if (speechTimer.current) clearTimeout(speechTimer.current);
+    speechTimer.current = null;
+    void browser.tts.stop();
+    microphone.current?.setMuted(false);
+    speakingRef.current = false;
+    setSpeaking(false);
+  }
+
+  function respond(text: string) {
+    stopReply();
+    setReply(text);
+    setMessage(text);
+    if (!spokenRepliesRef.current || !consentedRef.current) return;
+    const generation = speechGeneration.current;
+    const finish = () => {
+      if (generation !== speechGeneration.current) return;
+      if (speechTimer.current) clearTimeout(speechTimer.current);
+      speechTimer.current = setTimeout(() => {
+        if (generation !== speechGeneration.current) return;
+        microphone.current?.setMuted(false);
+        speakingRef.current = false;
+        setSpeaking(false);
+      }, 500);
+    };
+    microphone.current?.setMuted(true);
+    speakingRef.current = true;
+    setSpeaking(true);
+    speechTimer.current = setTimeout(() => { void browser.tts.stop(); finish(); }, 45000);
+    void browser.tts.speak(text.slice(0, 600), {
+      lang: 'en-US', requiredEventTypes: ['end'],
+      onEvent: event => {
+        if (['end', 'interrupted', 'cancelled', 'error'].includes(event.type)) {
+          if (event.type === 'error') setMessage(`${text} Voice playback unavailable. You can read the reply here.`);
+          finish();
+        }
+      },
+    }).catch(() => { setMessage(`${text} Voice playback unavailable. You can read the reply here.`); finish(); });
+  }
 
   async function refreshTabs() {
     if (!consentedRef.current) return;
@@ -154,7 +203,7 @@ function App() {
   }
   useEffect(() => {
     void browser.storage.local.remove(['webbActiveFollow', 'webbPendingFollow', 'webbFollowNotice', 'webbFollowPhase']);
-    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbFollowMode", "webbSourceNotesV1"]).then((saved) => {
+    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbFollowMode", "webbSourceNotesV1", "webbSpokenReplies"]).then((saved) => {
       if (typeof saved.apiBase === "string" && saved.apiBase !== "http://localhost:8787") setApiBase(saved.apiBase);
       if (saved.privacyConsentVersion === "1") {
         consentedRef.current = true;
@@ -162,7 +211,8 @@ function App() {
         void refreshTabs();
       }
       if (saved.webbAutoMode === true) setAutoMode(true);
-      if (saved.webbFollowMode === 'notes') setFollowMode('notes');
+      if (saved.webbFollowMode === 'actions') setFollowMode('actions');
+      if (saved.webbSpokenReplies === false) { spokenRepliesRef.current = false; setSpokenReplies(false); }
       if (Array.isArray(saved.webbSourceNotesV1)) setSourceNotes(saved.webbSourceNotesV1.filter((line): line is string => typeof line === 'string').slice(-100));
       const suggestion = saved.webbFollowSuggestion as FollowSuggestion | undefined;
       if (suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000) setFollowSuggestion(suggestion);
@@ -193,6 +243,7 @@ function App() {
       browser.tabs.onActivated.removeListener(activated);
       browser.tabs.onUpdated.removeListener(refreshTabs);
       browser.storage.onChanged.removeListener(onStorageChanged);
+      stopReply();
       void microphone.current?.stop();
       void followedAudio.current?.stop();
       void browser.storage.local.remove('webbActiveFollow');
@@ -200,6 +251,7 @@ function App() {
   }, []);
 
   function handleTurn(turn: TranscriptTurn) {
+    if (turn.source === 'user' && speakingRef.current) return;
     if (!turn.final) {
       setPartial(
         `${turn.source === "user" ? "YOU" : "SOURCE"}: ${turn.text}`,
@@ -209,6 +261,7 @@ function App() {
     setPartial("");
     if (turn.source === 'followed_tab') {
       setLatestTutorialText(turn.text);
+      coordinator.current?.observeSource(sourceDetailsRef.current?.title || 'Source', turn.text);
       if (followModeRef.current === 'notes') {
         const next = [...sourceNotesRef.current, turn.text].slice(-100);
         sourceNotesRef.current = next;
@@ -223,7 +276,7 @@ function App() {
     }
     if (turn.source === 'user' && viewRef.current.skill?.status !== 'needs_value') {
       if (/^(?:what(?:'s| is) playing|what (?:are you|is webb) listening to|which source)[?.!\s]*$/i.test(turn.text.trim())) {
-        setMessage(followedAudio.current && sourceDetailsRef.current
+        respond(followedAudio.current && sourceDetailsRef.current
           ? `Listening to ${sourceDetailsRef.current.title}.`
           : 'Source audio is not connected. Select Start listening and share the source tab with audio.');
         return;
@@ -258,6 +311,7 @@ function App() {
     }
   }
   async function startMic() {
+    stopReply();
     if (!consented || micStartingRef.current) return;
     micStartingRef.current = true;
     setMicStarting(true);
@@ -348,6 +402,7 @@ function App() {
       await browser.storage.local.set({ webbActiveFollow: tab.id });
       setFollowed(tab.id);
       coordinator.current?.setFollowedTab(tab.id);
+      coordinator.current?.resetSource();
       sourceDetailsRef.current = source;
       setMessage('Source connected. Play it to hear speech in Webb.');
     } catch (error) {
@@ -434,6 +489,7 @@ function App() {
   }
   function submitText() {
     if (!consented || !draft.trim()) return;
+    stopReply();
     handleTurn({
       source: "user",
       text: draft.trim(),
@@ -451,6 +507,8 @@ function App() {
   }
 
   async function withdrawPrivacyConsent() {
+    stopReply();
+    setReply("");
     await microphone.current?.stop();
     microphone.current = null;
     setMicOn(false);
@@ -477,7 +535,7 @@ function App() {
     setRecentRun(null);
     setLastVideo(null);
     setSourceNotes([]);
-    setFollowMode('actions');
+    setFollowMode('notes');
     setMessage(cloudSessionDeleted
       ? "Webb stopped and session data was cleared."
       : "Webb stopped. Previously sent data will expire within 24 hours.");
@@ -526,7 +584,7 @@ function App() {
             <span className="eyebrow">BEFORE YOU START</span>
             <h1 id="privacy-consent-title">What Webb reads and sends</h1>
             <p>
-              When you start TALK or FOLLOW, Webb sends your chosen microphone or source-tab audio to AssemblyAI for transcription. In action mode it sends speech and visible controls from the selected page to Webb's Worker and Groq. Notes mode keeps the transcript in this browser until you clear it. Action progress is kept in a temporary Cloudflare session for up to 24 hours after your last activity.
+              When you start TALK or FOLLOW, Webb sends your chosen microphone or source-tab audio to AssemblyAI for transcription. In action mode it sends speech and visible controls from the selected page to Webb's Worker and Groq. Listen and assist stores the transcript in this browser. When you ask a question or request an action, recent source speech is sent to the Worker and Groq as context. Spoken replies use Chrome speech synthesis. Action progress is kept in a temporary Cloudflare session for up to 24 hours after your last activity.
             </p>
             <p>
               Audio and page data are used to carry out your instructions. They are not used for advertising. Review the <a href="https://webb-five-puce.vercel.app/privacy.html" target="_blank" rel="noreferrer">privacy policy</a> before continuing.
@@ -550,6 +608,7 @@ function App() {
               onChange={(event) => setApiBase(event.target.value)}
               onBlur={() => void browser.storage.local.set({ apiBase })}
             />
+            <label className="auto-mode-row"><span><strong>Spoken replies</strong><small>Webb answers aloud. Your mic pauses during replies to prevent echoes.</small></span><input type="checkbox" checked={spokenReplies} onChange={event => { const enabled = event.target.checked; spokenRepliesRef.current = enabled; setSpokenReplies(enabled); if (!enabled) stopReply(); void browser.storage.local.set({ webbSpokenReplies: enabled }); }} /></label>
             <p>Keep API keys on your Worker.</p>
             <label htmlFor="extension-id">Extension ID</label>
             <input
@@ -581,16 +640,18 @@ function App() {
             <button onClick={() => void followSuggestedTab()}>Listen to this source <Icon name="arrow" size={15} /></button>
           </section>
         )}
+      {reply && <section className="source-notes" aria-label="Webb reply"><strong>Webb</strong><p>{reply}</p>{speaking && <button type="button" onClick={stopReply}>Stop speaking and listen to me</button>}</section>}
         <section className="setup-section" aria-label="Choose tabs">
           <div className="section-heading">
             <h2>Listen to a source</h2>
           </div>
           <p className="section-intro">
-            Use a video, lecture, meeting, or walkthrough in the active tab. Chrome will ask you to share that tab with audio.
+            Watch or listen normally. Share any audio tab so Webb can understand the context. Use the mic to ask questions or request actions on a website.
           </p>
+          <p className="section-intro">You can also use TALK without sharing a source. Select a target website and press the mic.</p>
           <div className="source-mode" role="group" aria-label="What Webb should do with source audio">
             <button type="button" aria-pressed={followMode === 'actions'} className={followMode === 'actions' ? 'selected' : ''} disabled={!!followed || followStarting} onClick={() => { setFollowMode('actions'); void browser.storage.local.set({ webbFollowMode: 'actions' }); }}>Act on instructions<small>Use spoken steps on another tab</small></button>
-            <button type="button" aria-pressed={followMode === 'notes'} className={followMode === 'notes' ? 'selected' : ''} disabled={!!followed || followStarting} onClick={() => { setFollowMode('notes'); void browser.storage.local.set({ webbFollowMode: 'notes' }); }}>Capture notes<small>Collect speech in Webb, then copy it</small></button>
+            <button type="button" aria-pressed={followMode === 'notes'} className={followMode === 'notes' ? 'selected' : ''} disabled={!!followed || followStarting} onClick={() => { setFollowMode('notes'); void browser.storage.local.set({ webbFollowMode: 'notes' }); }}>Listen and assist<small>Keep context. Act only when you ask.</small></button>
           </div>
           <div className="target-control">
             <label htmlFor="target-tab">{followMode === 'actions' ? 'ACT ON THIS TAB' : 'TARGET FOR YOUR COMMANDS (OPTIONAL)'}</label>
@@ -616,7 +677,7 @@ function App() {
               </select>
             </div>
           </div>
-          {followMode === 'actions' && tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">For lecture notes in Google Docs, choose Capture notes and copy the transcript into your document. Direct document writing is not supported yet.</p>}
+          {followMode === 'actions' && tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">For lecture notes in Google Docs, choose Listen and assist and copy the transcript into your document. Direct document writing is not supported yet.</p>}
           <button
             className={`follow-button ${followed ? "following" : ""}`}
             onClick={followed ? stopFollow : followCurrentTab}
@@ -635,9 +696,9 @@ function App() {
         {(followed || (followMode === 'actions' && target)) && <section className="connection-summary" aria-label="Browser connection">
           <div><span>LISTENING TO</span><strong title={followedTitle}>{followedTitle}</strong><small>{followed ? 'Connected' : 'Choose a source'}</small></div>
           <Icon name="arrow" size={15} />
-          <div><span>{followMode === 'notes' ? 'CAPTURING' : 'ACTING ON'}</span><strong title={followMode === 'notes' ? 'Notes in Webb' : targetTitle}>{followMode === 'notes' ? 'Notes in Webb' : targetTitle}</strong><small>{followMode === 'notes' ? 'Copy to your document' : target ? 'Selected' : 'Choose a tab above'}</small></div>
+          <div><span>{followMode === 'notes' ? 'READY TO ASSIST' : 'ACTING ON'}</span><strong title={followMode === 'notes' ? (target ? targetTitle : 'Ask Webb anytime') : targetTitle}>{followMode === 'notes' ? (target ? targetTitle : 'Ask Webb anytime') : targetTitle}</strong><small>{followMode === 'notes' ? 'Waiting for your request' : target ? 'Selected' : 'Choose a tab above'}</small></div>
         </section>}
-        {followMode === 'notes' && sourceNotes.length > 0 && <section className="source-notes" aria-label="Captured notes"><div className="section-heading"><h2>Notes</h2><span>{sourceNotes.length} {sourceNotes.length === 1 ? 'LINE' : 'LINES'}</span></div><div className="source-notes-text">{sourceNotes.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}</div><button type="button" onClick={() => void copySourceNotes()}>Copy notes for Docs</button></section>}
+        {followMode === 'notes' && sourceNotes.length > 0 && <section className="source-notes" aria-label="Captured notes"><div className="section-heading"><h2>Source transcript</h2><span>{sourceNotes.length} {sourceNotes.length === 1 ? 'LINE' : 'LINES'}</span></div><div className="source-notes-text">{sourceNotes.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}</div><button type="button" onClick={() => void copySourceNotes()}>Copy transcript</button></section>}
         {view.pending && (
           <section className="decision-card" aria-label="Confirmation required">
             <div className="decision-label">
