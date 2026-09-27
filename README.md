@@ -14,7 +14,7 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
-Download the [Webb 0.2.2 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.2/webb-0.2.2.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
+Download the [Webb 0.2.3 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.3/webb-0.2.3.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
 
 To build from source instead:
 
@@ -30,8 +30,9 @@ Then select `.output/chrome-mv3` in Chrome. Pin Webb to open its side panel. The
 ## Use voice
 
 - In **TALK**, choose a target tab and speak one instruction. For example: "Open Gmail".
-- In **FOLLOW**, open the tutorial tab and select **Follow active tutorial tab**, then click the pinned Webb toolbar icon on that tab to grant tab audio capture. Webb can listen before you choose a target. Select a different website as the target before asking Webb to act. Play one step at a time.
-- When a video starts, click Webb's small invitation to open the side panel. With **Auto learn** on, click the Webb toolbar icon on that video tab to start FOLLOW and save the verified workflow when you stop.
+- In **FOLLOW**, open the tutorial tab and select **Follow this tab**. Webb starts listening if Chrome has granted access. If it shows **Ready to listen**, click the blue Webb icon in Chrome's top toolbar on that tab. Select a different website as the target before asking Webb to act. Play one step at a time.
+- If TALK reports that microphone access was denied, use **Enable microphone in Chrome**. This opens an extension tab where Chrome can show its permission prompt. Then return to Webb and press the mic again.
+- To save a workflow, enable **Save verified steps** in Settings. Webb only offers a skill after it has verified browser actions, and saves it when you stop FOLLOW.
 - To reuse a workflow, choose **Run** under Skills or say "Run skill" followed by its name. Webb matches each step to the current page and asks for fresh form values. If a control is missing, it stops.
 - For email, ask Webb to prepare the recipient, subject, and message. Review the draft and confirm before sending. Use your own test address.
 

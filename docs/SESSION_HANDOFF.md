@@ -23,12 +23,14 @@ Keep the product focused on converting speech plus current page state into verif
 - Practice pages: https://webb-five-puce.vercel.app/demo/
 - Worker: https://webb-api.collins-coordinator-worker.workers.dev
 - Public source repository: https://github.com/agapemiteu/webb
-- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.2/webb-0.2.2.zip
+- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.3/webb-0.2.3.zip
 - Chrome extension is not in the Chrome Web Store. Install the ZIP with Chrome Developer mode, or clone the source and build it.
 
 The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Version 0.2.1 fixes the real Chrome failure reported in screenshots: `tabCapture.getMediaStreamId()` was requested from a side panel click without the extension being invoked on the tab. FOLLOW now arms the tutorial tab in the panel and starts capture from the pinned Webb toolbar icon click. It also uses AssemblyAI's supported `u3-rt-pro` model, no longer selects the tutorial as its own target, and can inject its page script into a tab already open before installation. The release archive SHA-256 is `ccbb48a2f7d02de7794fb1a9999a2a31fc1e1d6be0b412c7c5cb072902f703f2`. A live token and AssemblyAI WebSocket session connected successfully. Full FOLLOW transcription inside the user's Chrome profile still needs a manual check. No credential values were printed.
 
 Version 0.2.2 fixes the setup failure shown in the 18:21 screenshots. The panel rejected FOLLOW when the tutorial tab was selected as its own target. Its target-clearing code ran after that rejection and was unreachable. FOLLOW now clears that mistaken target, starts listening without a target, and shows the latest tutorial transcript. Tutorial turns are held from the planner until a different target is selected. The release ZIP SHA-256 is `44b2b0533175421ea9be3d389b705b7a7407403fc89443bc24e6d0934b0cd590`. The compiled extension was scanned for key names and key-shaped strings; none were found. Full FOLLOW transcription inside the user's Chrome profile still needs a manual check.
+
+The 19:06 screenshots of 0.2.2 show FOLLOW still pending with a valid Google Docs target. TALK reports microphone permission dismissed. Version 0.2.3 attempts tab capture directly from the Follow click when Chrome has already granted access; otherwise it keeps the toolbar path. It records distinct waiting, toolbar received, connecting, connected, and error states so the panel can report the actual capture stage. Chrome side panels can suppress microphone permission prompts, so 0.2.3 opens a normal extension tab to request microphone access, then tells the user to retry TALK. The panel now shows the core Follow and target controls first, with Skills and Progress only when they have content. The release ZIP SHA-256 is `100ea9e414d5a39038ed24abf62e95501909813e30d02a959b17c0403e2100b1`. A real Chrome run of 0.2.3 is still required before claiming voice capture works.
 
 ## Safety and demo limits
 
@@ -41,19 +43,20 @@ Version 0.2.2 fixes the setup failure shown in the 18:21 screenshots. The panel 
 
 ## Checks
 
-Passed during 0.2.2:
+Passed during 0.2.3:
 
 - Root TypeScript check, four root tests including the FOLLOW target regression, and production Chrome MV3 build.
 - A live token request and AssemblyAI `u3-rt-pro` WebSocket handshake via `node scripts/check-stream.mjs`.
+- A live Worker and Groq planner request selected the Settings control via `node scripts/check-plan.mjs`.
 - Worker TypeScript check and 13 unit tests.
 - Static site build and Vercel production deployment.
 - Vercel production alias and Worker token/planner smoke checks.
 - Local form and Workroom browser practice checks.
-- The public tutorial and privacy pages loaded in gstack browser QA; the tutorial was visually checked at mobile width.
+- The panel was visually checked at 380px width with its local browser preview; there were no console errors. The preview uses mocked Chrome APIs and does not prove capture.
 
 Still required for full end-to-end proof:
 
-- Load the 0.2.2 release ZIP in Chrome and test TALK and FOLLOW with the live Worker. The prior 0.2.0 build failed at Chrome tab capture permission in a user screenshot. The 0.2.1 build then blocked FOLLOW when the source was selected as target. The 0.2.2 target regression is covered by a test, but a real user profile run remains necessary.
+- Load the 0.2.3 release ZIP in Chrome and test TALK and FOLLOW with the live Worker. The prior 0.2.0 build failed at Chrome tab capture permission in a user screenshot. The 0.2.1 build blocked FOLLOW when the source was selected as target. The 0.2.2 build remained pending in the user's Chrome, and TALK's microphone prompt was dismissed. The 0.2.3 capture stage report should identify exactly where FOLLOW stops if it still fails.
 - Verify the video invitation and skill replay in a real Chrome profile. Headless page QA does not prove extension tab audio capture.
 - Test tab capture from YouTube, navigation to Gmail, and an explicitly confirmed email send to a test address.
 - Chrome Web Store publication requires a publisher account and is intentionally deferred.
