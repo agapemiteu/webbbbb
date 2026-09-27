@@ -81,7 +81,7 @@ function json(data: unknown, status = 200, origin?: string): Response {
       ...(origin ? {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Webb-Extension',
         Vary: 'Origin',
       } : {}),
     },
@@ -90,7 +90,13 @@ function json(data: unknown, status = 200, origin?: string): Response {
 
 function allowedOrigin(request: Request, env: Env): string | undefined {
   const origin = request.headers.get('Origin');
-  if (!origin) return undefined;
+  if (!origin) {
+    const extensionId = request.headers.get('X-Webb-Extension');
+    return request.method === 'GET'
+      && /^([a-p]{32})$/.test(extensionId || '')
+      && request.headers.get('Sec-Fetch-Site') === 'none'
+      && request.headers.get('Sec-Fetch-Mode') === 'cors' ? '*' : undefined;
+  }
   const configured = (env.ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean);
   return configured.includes(origin) || /^chrome-extension:\/\/[a-p]{32}$/.test(origin) ? origin : undefined;
 }
@@ -282,7 +288,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': origin,
           'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Headers': 'Content-Type, X-Webb-Extension',
           'Access-Control-Max-Age': '600',
           Vary: 'Origin',
         },

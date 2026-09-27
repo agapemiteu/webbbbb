@@ -146,7 +146,11 @@ function App() {
   useEffect(() => {
     browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice", "webbFollowPhase"]).then((saved) => {
       if (typeof saved.apiBase === "string" && saved.apiBase !== "http://localhost:8787") setApiBase(saved.apiBase);
-      if (saved.privacyConsentVersion === "1") setConsented(true);
+      if (saved.privacyConsentVersion === "1") {
+        consentedRef.current = true;
+        setConsented(true);
+        void refreshTabs();
+      }
       if (saved.webbAutoMode === true) setAutoMode(true);
       if (typeof saved.webbActiveFollow === 'number') setFollowed(saved.webbActiveFollow);
       const pending = saved.webbPendingFollow as PendingFollow | undefined;

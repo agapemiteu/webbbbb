@@ -71,6 +71,29 @@ test('allows valid Chrome extension IDs and configured website origins', async (
   assert.equal(siteResponse.headers.get('Access-Control-Allow-Origin'), siteOrigin);
 });
 
+test('accepts originless extension token GETs only with Chrome fetch metadata and an extension ID', async () => {
+  const headers = {
+    'X-Webb-Extension': extensionOrigin.slice('chrome-extension://'.length),
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-Mode': 'cors',
+  };
+  const url = 'https://webb.example/assemblyai-token';
+  const allowed = await worker.fetch(new Request(url, { headers }), { ...env, ASSEMBLYAI_API_KEY: undefined });
+  assert.equal(allowed.status, 503);
+  assert.equal(allowed.headers.get('Access-Control-Allow-Origin'), '*');
+
+  for (const rejectedHeaders of [
+    { ...headers, 'X-Webb-Extension': '' },
+    { ...headers, 'Sec-Fetch-Site': 'cross-site' },
+    { ...headers, 'Sec-Fetch-Mode': 'navigate' },
+  ]) {
+    const rejected = await worker.fetch(new Request(url, { headers: rejectedHeaders }), env);
+    assert.equal(rejected.status, 403);
+  }
+  const rejectedPost = await worker.fetch(new Request(url, { method: 'POST', headers }), env);
+  assert.equal(rejectedPost.status, 403);
+});
+
 test('allows the extension methods required for session state and deletion', async () => {
   const response = await worker.fetch(new Request('https://webb.example/session', {
     method: 'OPTIONS',

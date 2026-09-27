@@ -67,7 +67,9 @@ export class SessionCoordinator {
     if (this.sessionId) return;
     const saved = await browser.storage.local.get('webbSessionId');
     if (typeof saved.webbSessionId === 'string') {
-      const response = await fetch(`${this.apiBase()}/session/${saved.webbSessionId}`);
+      const response = await fetch(`${this.apiBase()}/session/${saved.webbSessionId}`, {
+        headers: { 'X-Webb-Extension': browser.runtime.id },
+      });
       if (response.ok) {
         const state = await response.json() as { revision: number };
         this.sessionId = saved.webbSessionId;

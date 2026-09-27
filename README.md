@@ -14,7 +14,7 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
-Download the [Webb 0.2.3 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.3/webb-0.2.3.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
+Download the [Webb 0.2.4 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.4/webb-0.2.4.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
 
 To build from source instead:
 

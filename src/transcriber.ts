@@ -13,7 +13,9 @@ export class Transcriber {
 
   async start(stream: MediaStream, apiBase: string, playThrough = false): Promise<void> {
     this.stream = stream;
-    const tokenResponse = await fetch(`${apiBase.replace(/\/$/, '')}/assemblyai-token`);
+    const tokenResponse = await fetch(`${apiBase.replace(/\/$/, '')}/assemblyai-token`, {
+      headers: { 'X-Webb-Extension': browser.runtime.id },
+    });
     if (!tokenResponse.ok) throw new Error(`Token request failed (${tokenResponse.status})`);
     const payload = await tokenResponse.json() as { token?: string };
     if (!payload.token) throw new Error('Token endpoint returned no token');
