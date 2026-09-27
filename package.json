@@ -1,12 +1,13 @@
 {
   "name": "webb",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
-    "typecheck": "wxt prepare && tsc --noEmit"
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "node --test src/*.test.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

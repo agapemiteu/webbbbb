@@ -4,7 +4,7 @@ export default defineConfig({
   manifest: {
     name: 'Webb',
     description: 'Talk to the web.',
-    version: '0.1.0',
+    version: '0.2.0',
     icons: {
       16: 'icons/webb-16.png',
       32: 'icons/webb-32.png',

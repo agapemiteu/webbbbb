@@ -1,7 +1,7 @@
 import type { ElementInfo, PageRequest, PageResponse, PageSnapshot } from '../src/protocol';
 import { browser } from 'wxt/browser';
 
-const selector = 'button, a[href], input, textarea, select, [role="button"], [role="link"]';
+const selector = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [contenteditable="true"], [role="textbox"]';
 const ids = new WeakMap<Element, string>();
 const elements = new Map<string, Element>();
 let nextId = 1;
@@ -15,6 +15,10 @@ function visible(element: Element): boolean {
 function label(element: Element): string {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
     return element.labels?.[0]?.textContent?.trim() || element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('name') || '';
+  }
+  if (element instanceof HTMLElement && element.isContentEditable) {
+    return element.getAttribute('aria-label') || element.getAttribute('data-placeholder')
+      || element.getAttribute('placeholder') || element.getAttribute('name') || 'Message body';
   }
   return element.getAttribute('aria-label') || element.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) || '';
 }
@@ -35,6 +39,8 @@ function snapshot(): PageSnapshot {
     const item: ElementInfo = { id, role, text: label(element), tag };
     if ((element instanceof HTMLInputElement && element.type !== 'password') || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
       item.value = element.value;
+    } else if (element instanceof HTMLElement && element.isContentEditable) {
+      item.value = element.textContent || '';
     }
     found.push(item);
     if (found.length >= 150) break;
@@ -58,6 +64,19 @@ async function execute(request: PageRequest): Promise<PageResponse> {
     }
     element.click();
     return { ok: true, snapshot: snapshot(), detail: `Clicked ${label(element) || request.id}` };
+  }
+  if (element instanceof HTMLElement && element.isContentEditable) {
+    element.focus();
+    const selection = window.getSelection();
+    selection?.selectAllChildren(element);
+    const inserted = document.execCommand('insertText', false, request.value);
+    if (!inserted) {
+      element.textContent = request.value;
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: request.value }));
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (element.textContent !== request.value) return { ok: false, error: 'Editor rejected the value.' };
+    return { ok: true, snapshot: snapshot(), detail: 'Editor value verified' };
   }
   if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
     return { ok: false, error: 'Element is not a field.' };
@@ -84,7 +103,64 @@ export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
   main() {
     browser.runtime.onMessage.addListener((message: PageRequest) => {
+      if (!message || !['INSPECT', 'CLICK', 'FILL'].includes(message.type)) return;
       return execute(message).catch((error): PageResponse => ({ ok: false, error: error instanceof Error ? error.message : 'Page action failed' }));
     });
+
+    let invite: HTMLElement | null = null;
+    let promptTimer: number | undefined;
+    const dismissalKey = `webb-video-dismissed:${location.pathname}${location.search}`;
+
+    function showVideoInvite() {
+      if (invite || sessionStorage.getItem(dismissalKey)) return;
+      invite = document.createElement('div');
+      invite.setAttribute('data-webb-video-invite', '');
+      const shadow = invite.attachShadow({ mode: 'closed' });
+      shadow.innerHTML = `<style>
+        :host{all:initial;position:fixed;right:20px;bottom:20px;z-index:2147483647;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+        .card{width:min(310px,calc(100vw - 40px));padding:16px;border:1px solid #cdddc0;border-radius:16px;background:#f9fcf5;color:#213528;box-shadow:0 14px 42px rgba(12,28,17,.22)}
+        .top{display:flex;align-items:center;justify-content:space-between;gap:10px}.brand{font-size:13px;font-weight:800;letter-spacing:-.03em}.dot{color:#286cf0}
+        .close{border:0;background:transparent;color:#667566;font-size:19px;line-height:1;padding:2px 5px;cursor:pointer}
+        p{margin:9px 0 13px;color:#526658;font-size:12px;line-height:1.45}
+        .start{width:100%;min-height:38px;border:0;border-radius:9px;background:#286cf0;color:white;font-size:12px;font-weight:700;cursor:pointer}
+        .start:hover{background:#1d59ca}.start:focus-visible,.close:focus-visible{outline:2px solid #286cf0;outline-offset:3px}
+      </style><aside class="card" aria-label="Webb video invitation"><div class="top"><span class="brand">webb<span class="dot">.</span> · VIDEO DETECTED</span><button class="close" aria-label="Dismiss Webb invitation">×</button></div><p>Following a tutorial? Webb can listen for steps and map them to another tab.</p><button class="start">Set up FOLLOW</button></aside>`;
+      shadow.querySelector<HTMLButtonElement>('.close')?.addEventListener('click', () => {
+        sessionStorage.setItem(dismissalKey, '1');
+        invite?.remove();
+        invite = null;
+      });
+      shadow.querySelector<HTMLButtonElement>('.start')?.addEventListener('click', async event => {
+        const button = event.currentTarget as HTMLButtonElement;
+        button.disabled = true;
+        button.textContent = 'Opening Webb...';
+        try {
+          const response = await browser.runtime.sendMessage({ type: 'VIDEO_FOLLOW_INTENT', autoStart: button.dataset.autoStart === 'true' }) as { ok?: boolean; error?: string };
+          if (!response?.ok) throw new Error(response?.error || 'Open Webb from the toolbar.');
+          invite?.remove();
+          invite = null;
+        } catch {
+          button.textContent = 'Open Webb from the toolbar';
+        }
+      });
+      void browser.storage.local.get(['privacyConsentVersion', 'webbAutoMode']).then(saved => {
+        const button = shadow.querySelector<HTMLButtonElement>('.start');
+        if (button && saved.privacyConsentVersion === '1' && saved.webbAutoMode === true) {
+          button.dataset.autoStart = 'true';
+          button.textContent = 'Follow and learn';
+        }
+      });
+      document.documentElement.appendChild(invite);
+    }
+
+    document.addEventListener('play', event => {
+      if (!(event.target instanceof HTMLVideoElement)) return;
+      const video = event.target;
+      if (Number.isFinite(video.duration) && video.duration < 15) return;
+      window.clearTimeout(promptTimer);
+      promptTimer = window.setTimeout(() => {
+        if (!video.paused && video.isConnected) showVideoInvite();
+      }, 1600);
+    }, true);
   },
 });

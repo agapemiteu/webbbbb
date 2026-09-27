@@ -4,9 +4,12 @@ import { browser } from "wxt/browser";
 import { SessionCoordinator, type SessionView } from "../../src/session";
 import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
+import { clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
+import { requestedSkill, videoSource, type RecentRun, type SkillSource, type WebbSkill } from "../../src/skill-model";
 import "./style.css";
 
 type TabOption = { id: number; title: string };
+type FollowSuggestion = { tabId: number; source: SkillSource; createdAt: number };
 const DEFAULT_API_BASE = "https://webb-api.collins-coordinator-worker.workers.dev";
 function Icon({
   name,
@@ -80,6 +83,13 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [consented, setConsented] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [autoMode, setAutoMode] = useState(false);
+  const [skills, setSkills] = useState<WebbSkill[]>([]);
+  const [recentRun, setRecentRun] = useState<RecentRun | null>(null);
+  const [lastVideo, setLastVideo] = useState<SkillSource | null>(null);
+  const [followSuggestion, setFollowSuggestion] = useState<FollowSuggestion | null>(null);
+  const [skillName, setSkillName] = useState("");
+  const [skillValue, setSkillValue] = useState("");
   const [view, setView] = useState<SessionView>({
     procedure: { goal: "", steps: [] },
     pending: null,
@@ -90,12 +100,16 @@ function App() {
   const targetRef = useRef(target);
   const followedRef = useRef(followed);
   const consentedRef = useRef(consented);
+  const skillsRef = useRef(skills);
+  const viewRef = useRef(view);
   const microphone = useRef<Transcriber | null>(null);
   const coordinator = useRef<SessionCoordinator | null>(null);
   apiRef.current = apiBase;
   targetRef.current = target;
   followedRef.current = followed;
   consentedRef.current = consented;
+  skillsRef.current = skills;
+  viewRef.current = view;
   if (!coordinator.current)
     coordinator.current = new SessionCoordinator(
       () => apiRef.current,
@@ -115,15 +129,27 @@ function App() {
         })),
     );
   }
+  async function refreshSkills() {
+    const memory = await loadSkillbook();
+    setSkills(memory.skills);
+    setRecentRun(memory.recent);
+    setLastVideo(memory.lastVideo);
+    if (memory.recent?.source) setSkillName(current => current || memory.recent!.source!.title.slice(0, 80));
+  }
   useEffect(() => {
-    browser.storage.local.get(["apiBase", "privacyConsentVersion"]).then((saved) => {
+    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow"]).then((saved) => {
       if (typeof saved.apiBase === "string" && saved.apiBase !== "http://localhost:8787") setApiBase(saved.apiBase);
       if (saved.privacyConsentVersion === "1") setConsented(true);
+      if (saved.webbAutoMode === true) setAutoMode(true);
+      if (typeof saved.webbActiveFollow === 'number') setFollowed(saved.webbActiveFollow);
+      const suggestion = saved.webbFollowSuggestion as FollowSuggestion | undefined;
+      if (suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000) setFollowSuggestion(suggestion);
     });
+    void refreshSkills();
     const activated = ({ tabId }: { tabId: number }) => {
       if (!consentedRef.current) return;
       void refreshTabs();
-      if (tabId !== followedRef.current) {
+      if (tabId !== followedRef.current && targetRef.current === null) {
         setTarget(tabId);
       }
     };
@@ -131,13 +157,32 @@ function App() {
       if (event.type === "TRANSCRIPT" && event.turn?.source === "followed_tab")
         handleTurn(event.turn);
     };
+    const onStorageChanged = (changes: Record<string, unknown>, area: string) => {
+      if (area !== 'local') return;
+      if ([SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY].some(key => key in changes)) void refreshSkills();
+      if ('webbFollowSuggestion' in changes) {
+        void browser.storage.local.get('webbFollowSuggestion').then(saved => {
+          const suggestion = saved.webbFollowSuggestion as FollowSuggestion | undefined;
+          setFollowSuggestion(suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000 ? suggestion : null);
+        });
+      }
+      if ('webbActiveFollow' in changes) {
+        void browser.storage.local.get('webbActiveFollow').then(saved => {
+          const sourceTab = typeof saved.webbActiveFollow === 'number' ? saved.webbActiveFollow : null;
+          setFollowed(sourceTab);
+          if (sourceTab && targetRef.current === sourceTab) { targetRef.current = null; setTarget(null); }
+        });
+      }
+    };
     browser.tabs.onActivated.addListener(activated);
     browser.tabs.onUpdated.addListener(refreshTabs);
     browser.runtime.onMessage.addListener(onMessage);
+    browser.storage.onChanged.addListener(onStorageChanged);
     return () => {
       browser.tabs.onActivated.removeListener(activated);
       browser.tabs.onUpdated.removeListener(refreshTabs);
       browser.runtime.onMessage.removeListener(onMessage);
+      browser.storage.onChanged.removeListener(onStorageChanged);
       void microphone.current?.stop();
     };
   }, []);
@@ -150,7 +195,23 @@ function App() {
       return;
     }
     setPartial("");
+    if (turn.source === 'user' && viewRef.current.skill?.status !== 'needs_value') {
+      const skill = requestedSkill(turn.text, skillsRef.current);
+      if (skill !== undefined) {
+        if (skill) runSkill(skill);
+        else setMessage('No saved skill matches that name. Choose one below.');
+        return;
+      }
+    }
     coordinator.current?.receive(turn);
+  }
+  function runSkill(skill: WebbSkill) {
+    try {
+      coordinator.current?.startSkill(skill);
+      setMessage(`Running ${skill.name} on the selected page.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not start skill.');
+    }
   }
   async function inspect() {
     if (!consented) return;
@@ -180,6 +241,7 @@ function App() {
         video: false,
       });
       const transcriber = new Transcriber("user", handleTurn);
+      if (!followedRef.current) coordinator.current?.startManualMemory();
       microphone.current = transcriber;
       await transcriber.start(stream, apiRef.current);
       setMicOn(true);
@@ -192,15 +254,13 @@ function App() {
       setMessage(error instanceof Error ? error.message : "Microphone failed");
     }
   }
-  async function followCurrentTab() {
+  async function followTab(tab: { id?: number; url?: string; title?: string }) {
     if (!consented) return;
     try {
-      const [tab] = await browser.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
       if (!tab?.id || !tab.url?.startsWith("http"))
         throw new Error("Activate the tutorial tab first.");
+      const [active] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (active?.id !== tab.id) throw new Error('Activate the video tab before starting FOLLOW.');
       const result = (await browser.runtime.sendMessage({
         type: "CAPTURE_TAB",
         tabId: tab.id,
@@ -209,7 +269,12 @@ function App() {
       if (!result?.ok)
         throw new Error(result?.error || "Could not capture tutorial tab.");
       setFollowed(tab.id);
+      if (targetRef.current === tab.id) { targetRef.current = null; setTarget(null); }
       coordinator.current?.setFollowedTab(tab.id);
+      const source = videoSource(tab.title || 'Tutorial', tab.url);
+      if (source) coordinator.current?.startVideoMemory(source);
+      await browser.storage.local.remove('webbFollowSuggestion');
+      setFollowSuggestion(null);
       setMessage(
         `Following ${tab.title || "tutorial tab"}. Switch to the target website.`,
       );
@@ -217,11 +282,55 @@ function App() {
       setMessage(error instanceof Error ? error.message : "Follow failed");
     }
   }
+  async function followCurrentTab() {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    await followTab(tab || {});
+  }
+  async function followSuggestedTab() {
+    if (!followSuggestion) return;
+    const tab = await browser.tabs.get(followSuggestion.tabId).catch(() => null);
+    if (!tab) { setFollowSuggestion(null); setMessage('The video tab is no longer open.'); return; }
+    await followTab(tab);
+  }
   async function stopFollow() {
     await browser.runtime.sendMessage({ type: "STOP_FOLLOW" });
+    await browser.storage.local.remove('webbActiveFollow');
+    if (autoMode) {
+      try {
+        const memory = await loadSkillbook();
+        if (memory.recent?.steps.length) {
+          const skill = await saveRecentAsSkill(memory.recent.source?.title || 'Browser workflow');
+          setMessage(`Saved ${skill.name} as a reusable skill.`);
+        } else setMessage('No verified steps to save from this video.');
+      } catch { setMessage('FOLLOW stopped. The skill could not be saved.'); }
+    } else setMessage("Stopped following tutorial audio.");
     setFollowed(null);
     coordinator.current?.setFollowedTab(null);
-    setMessage("Stopped following tutorial audio.");
+  }
+  async function saveSkill() {
+    try {
+      const saved = await saveRecentAsSkill(skillName || recentRun?.source?.title || 'Browser workflow');
+      setMessage(`Saved ${saved.name}. Say "Run skill ${saved.name}" to use it later.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save skill.');
+    }
+  }
+  async function removeSkill(id: string) {
+    await deleteSkill(id);
+    setMessage('Skill removed from this browser.');
+  }
+  async function changeAutoMode(enabled: boolean) {
+    setAutoMode(enabled);
+    await browser.storage.local.set({ webbAutoMode: enabled });
+    setMessage(enabled ? 'Auto learn is on for the tutorials you follow.' : 'Auto learn is off. You can still save a skill yourself.');
+  }
+  async function useSkillValue() {
+    try {
+      await coordinator.current?.provideSkillValue(skillValue);
+      setSkillValue('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not use that value.');
+    }
   }
   function submitText() {
     if (!consented || !draft.trim()) return;
@@ -254,12 +363,18 @@ function App() {
     } catch {
       cloudSessionDeleted = false;
     }
-    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId"]);
+    await clearSkillbook();
+    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow"]);
     consentedRef.current = false;
     setConsented(false);
     setTabs([]);
     setTarget(null);
     setSnapshot(null);
+    setAutoMode(false);
+    setFollowSuggestion(null);
+    setSkills([]);
+    setRecentRun(null);
+    setLastVideo(null);
     setMessage(cloudSessionDeleted
       ? "Webb stopped and session data was cleared."
       : "Webb stopped. Previously sent data will expire within 24 hours.");
@@ -346,6 +461,14 @@ function App() {
                 Withdraw consent and stop Webb
               </button>
             )}
+          </section>
+        )}
+        {followSuggestion && consented && !followed && (
+          <section className="video-suggestion" aria-label="Video ready to follow">
+            <span className="eyebrow">VIDEO READY</span>
+            <h2>{followSuggestion.source.title}</h2>
+            <p>Webb can hear this tab, find actionable steps, and build a reusable skill from verified actions.</p>
+            <button onClick={() => void followSuggestedTab()}>Follow this video <Icon name="arrow" size={15} /></button>
           </section>
         )}
         <section className="flow-card" aria-label="Browser connection">
@@ -459,6 +582,25 @@ function App() {
             </div>
           </section>
         )}
+        {view.skill && (
+          <section className="skill-run-card" aria-label="Running skill">
+            <div className="section-heading"><h2>{view.skill.name}</h2><span>{view.skill.status.replace('_', ' ').toUpperCase()}</span></div>
+            <p>{view.skill.status === 'needs_value'
+              ? `Say the value for ${view.skill.fieldLabel}, or type it below. Webb does not reuse old form values.`
+              : view.skill.status === 'complete'
+                ? 'The learned workflow finished on this page.'
+                : view.skill.status === 'failed'
+                  ? 'Webb stopped because this page did not match a step reliably.'
+                  : `Step ${Math.min(view.skill.index + 1, view.skill.total)} of ${view.skill.total}`}</p>
+            {view.skill.status === 'needs_value' && (
+              <div className="skill-value-row">
+                <input aria-label={`Value for ${view.skill.fieldLabel}`} value={skillValue} onChange={event => setSkillValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void useSkillValue(); }} placeholder={`Value for ${view.skill.fieldLabel}`} />
+                <button onClick={() => void useSkillValue()} disabled={!skillValue.trim()}>Use value</button>
+              </div>
+            )}
+            {['running', 'needs_value', 'needs_confirmation'].includes(view.skill.status) && <button className="skill-stop" onClick={() => coordinator.current?.cancelSkill()}>Stop skill</button>}
+          </section>
+        )}
         {(current || latestStep || partial) && (
           <section className="step-card" aria-label="Current action">
             <div className="section-heading">
@@ -527,6 +669,32 @@ function App() {
             </p>
           )}
         </section>
+        {consented && (
+          <section className="skills-section" aria-label="Reusable skills">
+            <div className="section-heading"><h2>Skills</h2><span>{skills.length} SAVED</span></div>
+            <p className="section-intro">Webb remembers verified steps and matches them to the controls on your next page.</p>
+            <label className="auto-mode-row">
+              <span><strong>Auto learn</strong><small>Save a skill when you stop following a video.</small></span>
+              <input type="checkbox" checked={autoMode} onChange={event => void changeAutoMode(event.target.checked)} />
+            </label>
+            {lastVideo && <div className="last-video"><span>LAST VIDEO</span><a href={lastVideo.url} target="_blank" rel="noreferrer">{lastVideo.title}</a></div>}
+            {recentRun && recentRun.steps.length > 0 && (
+              <div className="recent-skill">
+                <span className="eyebrow">READY TO SAVE</span>
+                <strong>{recentRun.steps.length} verified {recentRun.steps.length === 1 ? 'step' : 'steps'}</strong>
+                <p>Field values are left blank for the next run.</p>
+                <div className="save-skill-row"><input aria-label="Name this skill" value={skillName} onChange={event => setSkillName(event.target.value)} placeholder="Name this skill" /><button onClick={() => void saveSkill()}>Save skill</button></div>
+              </div>
+            )}
+            {skills.length ? <ul className="saved-skills">
+              {skills.map(skill => <li key={skill.id}>
+                <div><strong>{skill.name}</strong><small>{skill.steps.length} steps · {skill.targetHost || 'Any site'}</small></div>
+                <button onClick={() => runSkill(skill)} disabled={!target}>Run</button>
+                <button className="remove-skill" onClick={() => void removeSkill(skill.id)} aria-label={`Remove ${skill.name}`}>×</button>
+              </li>)}
+            </ul> : <p className="empty-note">Follow a tutorial, verify a few steps, then save the workflow.</p>}
+          </section>
+        )}
         <section className="activity-section">
           <button
             className="activity-toggle"
