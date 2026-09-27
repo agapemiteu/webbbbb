@@ -7,7 +7,7 @@ const mock = `<script>
 const event = { addListener() {}, removeListener() {} };
 globalThis.chrome = {
   runtime: { id: 'webb-preview', onMessage: event, sendMessage: async () => ({ ok: false, error: 'Preview only' }), getURL: path => path },
-  storage: { local: { get: async () => ({}), set: async () => {} } },
+  storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} }, onChanged: event },
   tabs: {
     query: async () => [
       { id: 1, title: 'Deploying an application | Tutorial', url: 'http://127.0.0.1:4173/tutorial.html' },

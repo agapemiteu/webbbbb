@@ -20,7 +20,7 @@ export class Transcriber {
 
     const url = new URL('wss://streaming.assemblyai.com/v3/ws');
     url.searchParams.set('sample_rate', '16000');
-    url.searchParams.set('speech_model', 'universal-3-6-pro');
+    url.searchParams.set('speech_model', 'u3-rt-pro');
     url.searchParams.set('token', payload.token);
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -56,6 +56,7 @@ export class Transcriber {
 
   async stop(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'Terminate' }));
+    this.socket?.close();
     this.processor?.disconnect();
     this.stream?.getTracks().forEach(track => track.stop());
     await this.context?.close();

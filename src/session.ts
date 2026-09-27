@@ -137,7 +137,17 @@ export class SessionCoordinator {
   async inspect(): Promise<PageSnapshot> {
     const tab = this.targetTab();
     if (!tab) throw new Error('Choose a target tab first.');
-    const result = await browser.tabs.sendMessage(tab, { type: 'INSPECT' } satisfies PageRequest) as PageResponse;
+    let result: PageResponse;
+    try {
+      result = await browser.tabs.sendMessage(tab, { type: 'INSPECT' } satisfies PageRequest) as PageResponse;
+    } catch {
+      try {
+        await browser.scripting.executeScript({ target: { tabId: tab }, files: ['/content-scripts/content.js'] });
+        result = await browser.tabs.sendMessage(tab, { type: 'INSPECT' } satisfies PageRequest) as PageResponse;
+      } catch {
+        throw new Error('Webb cannot inspect this tab. Open or reload a normal website, then try again.');
+      }
+    }
     if (!result.ok) throw new Error(result.error);
     return result.snapshot;
   }

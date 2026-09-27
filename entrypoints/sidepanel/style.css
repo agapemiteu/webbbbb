@@ -151,6 +151,7 @@ p {
   color: #fff;
   box-shadow: 0 12px 28px rgba(23, 43, 36, 0.12);
 }
+.connected-flow { margin-top: 22px; }
 .flow-header {
   display: flex;
   justify-content: space-between;
@@ -295,6 +296,16 @@ p {
   border-color: #cbd6bd;
   background: #ecf2e3;
   color: #1c311c;
+}
+.follow-instruction {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #b9d1f8;
+  border-radius: 10px;
+  background: #eef5ff;
+  color: #244675;
+  font-size: 11px;
+  line-height: 1.5;
 }
 .follow-button > span:nth-child(2) {
   flex: 1;

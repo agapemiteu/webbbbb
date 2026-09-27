@@ -14,7 +14,7 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
-Download the [Webb 0.2.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.0/webb-0.2.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder.
+Download the [Webb 0.2.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.1/webb-0.2.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
 
 To build from source instead:
 
@@ -30,8 +30,8 @@ Then select `.output/chrome-mv3` in Chrome. Pin Webb to open its side panel. The
 ## Use voice
 
 - In **TALK**, choose a target tab and speak one instruction. For example: "Open Gmail".
-- In **FOLLOW**, start listening from a tutorial tab, select the target tab, and play one step at a time.
-- When a video starts, click Webb's small invitation to open the side panel. Turn on **Auto learn** to start FOLLOW from that click and save the verified workflow when you stop.
+- In **FOLLOW**, choose the target website tab. On the tutorial tab, select **Follow active tutorial tab**, then click the pinned Webb toolbar icon on that tab to grant tab audio capture. Play one step at a time.
+- When a video starts, click Webb's small invitation to open the side panel. With **Auto learn** on, click the Webb toolbar icon on that video tab to start FOLLOW and save the verified workflow when you stop.
 - To reuse a workflow, choose **Run** under Skills or say "Run skill" followed by its name. Webb matches each step to the current page and asks for fresh form values. If a control is missing, it stops.
 - For email, ask Webb to prepare the recipient, subject, and message. Review the draft and confirm before sending. Use your own test address.
 

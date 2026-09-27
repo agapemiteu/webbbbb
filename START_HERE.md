@@ -2,7 +2,7 @@
 
 ## Install the extension
 
-Download the [Webb 0.2.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.0/webb-0.2.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Pin Webb to open its side panel.
+Download the [Webb 0.2.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.1/webb-0.2.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
 
 To build from source instead:
 
@@ -17,7 +17,7 @@ Select `.output/chrome-mv3` in Chrome. Pin Webb, then click its icon to open the
 
 ## Run the guided demo
 
-Open the [practice site](https://webb-five-puce.vercel.app/demo/) and the [spoken walkthrough](https://webb-five-puce.vercel.app/demo/tutorial.html) in separate tabs. Select the practice site as the target in Webb, start FOLLOW from the tutorial tab, switch back to the target, then play the tutorial one step at a time.
+Open the [practice site](https://webb-five-puce.vercel.app/demo/) and the [spoken walkthrough](https://webb-five-puce.vercel.app/demo/tutorial.html) in separate tabs. In Webb, choose the practice site as the target. On the walkthrough tab, select **Follow active tutorial tab**, then click Webb's pinned Chrome toolbar icon on that same tab. Wait for **FOLLOWING**, switch back to the practice site, and play one spoken step at a time. The toolbar click grants Chrome's required tab capture access.
 
 To learn the walkthrough as a skill, turn on **Auto learn** before following. Webb saves verified browser steps when you stop FOLLOW. Select a target page and use **Run** in Skills to replay it. Webb asks for new form values and pauses for confirmation before consequential actions.
 

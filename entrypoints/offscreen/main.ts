@@ -23,7 +23,7 @@ browser.runtime.onMessage.addListener((message: { type?: string; streamId?: stri
       await followed.start(stream, message.apiBase!, true);
       return { ok: true };
     } catch (error) {
-      stream.getTracks().forEach(track => track.stop());
+      await followed.stop().catch(() => {});
       followed = null;
       return { ok: false, error: error instanceof Error ? error.message : 'Failed to follow tab' };
     }

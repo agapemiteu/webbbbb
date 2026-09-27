@@ -23,10 +23,10 @@ Keep the product focused on converting speech plus current page state into verif
 - Practice pages: https://webb-five-puce.vercel.app/demo/
 - Worker: https://webb-api.collins-coordinator-worker.workers.dev
 - Public source repository: https://github.com/agapemiteu/webb
-- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.0/webb-0.2.0.zip
+- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.1/webb-0.2.1.zip
 - Chrome extension is not in the Chrome Web Store. Install the ZIP with Chrome Developer mode, or clone the source and build it.
 
-The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Checks so far: `/health` returns 200, `/assemblyai-token` returns 200 with site CORS, and a live Groq request returned a 0.95 confidence click plan for a synthetic Connections link. Version 0.2.0 adds a video invitation, Auto learn after a user click, local skill memory, and verified step replay. Commit `91ceada` was pushed, and the public `v0.2.0` release contains `webb-0.2.0.zip` with SHA-256 `47c542bd0a025791577cf2a7c52b71eb6ea6ece9019247b66cea2b0d47d22ebe`. No credential values were printed. Live Chrome microphone streaming, Gmail behavior, and sending a real email have not been verified.
+The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Version 0.2.1 fixes the real Chrome failure reported in screenshots: `tabCapture.getMediaStreamId()` was requested from a side panel click without the extension being invoked on the tab. FOLLOW now arms the tutorial tab in the panel and starts capture from the pinned Webb toolbar icon click. It also uses AssemblyAI's supported `u3-rt-pro` model, no longer selects the tutorial as its own target, and can inject its page script into a tab already open before installation. The release archive SHA-256 is `ccbb48a2f7d02de7794fb1a9999a2a31fc1e1d6be0b412c7c5cb072902f703f2`. A live token and AssemblyAI WebSocket session connected successfully. Full FOLLOW transcription inside the user's Chrome profile still needs a manual check. No credential values were printed.
 
 ## Safety and demo limits
 
@@ -42,6 +42,7 @@ The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The 
 Passed during this release:
 
 - Root TypeScript check, three skill-model tests, and production Chrome MV3 build.
+- A live token request and AssemblyAI `u3-rt-pro` WebSocket handshake via `node scripts/check-stream.mjs`.
 - Worker TypeScript check and 13 unit tests.
 - Static site build and Vercel production deployment.
 - Vercel production alias and Worker token/planner smoke checks.
@@ -50,7 +51,7 @@ Passed during this release:
 
 Still required for full end-to-end proof:
 
-- Load the release ZIP in Chrome, permit microphone access, and test TALK and FOLLOW with the live Worker.
+- Load the 0.2.1 release ZIP in Chrome and test TALK and FOLLOW with the live Worker. The prior 0.2.0 build failed at Chrome tab capture permission in a user screenshot. The 0.2.1 toolbar flow was checked against Chrome's documented requirement and built, but a real user profile run remains necessary.
 - Verify the video invitation and skill replay in a real Chrome profile. Headless page QA does not prove extension tab audio capture.
 - Test tab capture from YouTube, navigation to Gmail, and an explicitly confirmed email send to a test address.
 - Chrome Web Store publication requires a publisher account and is intentionally deferred.

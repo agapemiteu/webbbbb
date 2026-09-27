@@ -10,6 +10,7 @@ import "./style.css";
 
 type TabOption = { id: number; title: string };
 type FollowSuggestion = { tabId: number; source: SkillSource; createdAt: number };
+type PendingFollow = { tabId: number; apiBase: string; source: SkillSource; requestedAt: number };
 const DEFAULT_API_BASE = "https://webb-api.collins-coordinator-worker.workers.dev";
 function Icon({
   name,
@@ -88,6 +89,7 @@ function App() {
   const [recentRun, setRecentRun] = useState<RecentRun | null>(null);
   const [lastVideo, setLastVideo] = useState<SkillSource | null>(null);
   const [followSuggestion, setFollowSuggestion] = useState<FollowSuggestion | null>(null);
+  const [pendingFollow, setPendingFollow] = useState<PendingFollow | null>(null);
   const [skillName, setSkillName] = useState("");
   const [skillValue, setSkillValue] = useState("");
   const [view, setView] = useState<SessionView>({
@@ -137,11 +139,17 @@ function App() {
     if (memory.recent?.source) setSkillName(current => current || memory.recent!.source!.title.slice(0, 80));
   }
   useEffect(() => {
-    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow"]).then((saved) => {
+    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice"]).then((saved) => {
       if (typeof saved.apiBase === "string" && saved.apiBase !== "http://localhost:8787") setApiBase(saved.apiBase);
       if (saved.privacyConsentVersion === "1") setConsented(true);
       if (saved.webbAutoMode === true) setAutoMode(true);
       if (typeof saved.webbActiveFollow === 'number') setFollowed(saved.webbActiveFollow);
+      const pending = saved.webbPendingFollow as PendingFollow | undefined;
+      if (pending?.tabId && Date.now() - pending.requestedAt < 2 * 60_000) {
+        setPendingFollow(pending);
+        setMessage('Click the pinned Webb toolbar icon on the tutorial tab to start FOLLOW.');
+      }
+      if (typeof saved.webbFollowNotice === 'string') setMessage(saved.webbFollowNotice);
       const suggestion = saved.webbFollowSuggestion as FollowSuggestion | undefined;
       if (suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000) setFollowSuggestion(suggestion);
     });
@@ -149,9 +157,6 @@ function App() {
     const activated = ({ tabId }: { tabId: number }) => {
       if (!consentedRef.current) return;
       void refreshTabs();
-      if (tabId !== followedRef.current && targetRef.current === null) {
-        setTarget(tabId);
-      }
     };
     const onMessage = (event: { type?: string; turn?: TranscriptTurn }) => {
       if (event.type === "TRANSCRIPT" && event.turn?.source === "followed_tab")
@@ -170,7 +175,20 @@ function App() {
         void browser.storage.local.get('webbActiveFollow').then(saved => {
           const sourceTab = typeof saved.webbActiveFollow === 'number' ? saved.webbActiveFollow : null;
           setFollowed(sourceTab);
+          coordinator.current?.setFollowedTab(sourceTab);
           if (sourceTab && targetRef.current === sourceTab) { targetRef.current = null; setTarget(null); }
+        });
+      }
+      if ('webbPendingFollow' in changes) {
+        void browser.storage.local.get('webbPendingFollow').then(saved => {
+          const pending = (saved.webbPendingFollow as PendingFollow | undefined) || null;
+          setPendingFollow(pending);
+          if (pending) setMessage('Click the pinned Webb toolbar icon on the tutorial tab to start FOLLOW.');
+        });
+      }
+      if ('webbFollowNotice' in changes) {
+        void browser.storage.local.get('webbFollowNotice').then(saved => {
+          if (typeof saved.webbFollowNotice === 'string') setMessage(saved.webbFollowNotice);
         });
       }
     };
@@ -251,7 +269,10 @@ function App() {
       await microphone.current?.stop();
       microphone.current = null;
       coordinator.current?.setTalkActive(false);
-      setMessage(error instanceof Error ? error.message : "Microphone failed");
+      const detail = error instanceof Error ? error.message : 'Microphone failed';
+      setMessage(/permission dismissed|permission denied|notallowederror/i.test(detail)
+        ? 'Microphone access was not allowed. Click the mic again and choose Allow in Chrome.'
+        : detail);
     }
   }
   async function followTab(tab: { id?: number; url?: string; title?: string }) {
@@ -259,25 +280,18 @@ function App() {
     try {
       if (!tab?.id || !tab.url?.startsWith("http"))
         throw new Error("Activate the tutorial tab first.");
+      if (!targetRef.current || targetRef.current === tab.id)
+        throw new Error('Choose a target website tab that is different from the tutorial.');
       const [active] = await browser.tabs.query({ active: true, currentWindow: true });
       if (active?.id !== tab.id) throw new Error('Activate the video tab before starting FOLLOW.');
-      const result = (await browser.runtime.sendMessage({
-        type: "CAPTURE_TAB",
-        tabId: tab.id,
-        apiBase: apiRef.current,
-      })) as { ok?: boolean; error?: string };
-      if (!result?.ok)
-        throw new Error(result?.error || "Could not capture tutorial tab.");
-      setFollowed(tab.id);
       if (targetRef.current === tab.id) { targetRef.current = null; setTarget(null); }
-      coordinator.current?.setFollowedTab(tab.id);
       const source = videoSource(tab.title || 'Tutorial', tab.url);
-      if (source) coordinator.current?.startVideoMemory(source);
+      if (!source) throw new Error('This tab cannot be followed. Choose a website with audio.');
+      await browser.storage.local.remove('webbFollowNotice');
+      await browser.storage.local.set({ webbPendingFollow: { tabId: tab.id, apiBase: apiRef.current, source, requestedAt: Date.now() } satisfies PendingFollow });
       await browser.storage.local.remove('webbFollowSuggestion');
       setFollowSuggestion(null);
-      setMessage(
-        `Following ${tab.title || "tutorial tab"}. Switch to the target website.`,
-      );
+      setMessage('Click the pinned Webb toolbar icon on this tutorial tab to start FOLLOW.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Follow failed");
     }
@@ -293,7 +307,7 @@ function App() {
     await followTab(tab);
   }
   async function stopFollow() {
-    await browser.runtime.sendMessage({ type: "STOP_FOLLOW" });
+    await browser.runtime.sendMessage({ type: "STOP_FOLLOW" }).catch(() => {});
     await browser.storage.local.remove('webbActiveFollow');
     if (autoMode) {
       try {
@@ -306,6 +320,11 @@ function App() {
     } else setMessage("Stopped following tutorial audio.");
     setFollowed(null);
     coordinator.current?.setFollowedTab(null);
+  }
+  async function cancelFollowSetup() {
+    await browser.storage.local.remove('webbPendingFollow');
+    setPendingFollow(null);
+    setMessage('FOLLOW setup cancelled.');
   }
   async function saveSkill() {
     try {
@@ -354,7 +373,7 @@ function App() {
     await microphone.current?.stop();
     microphone.current = null;
     setMicOn(false);
-    if (followedRef.current) await browser.runtime.sendMessage({ type: "STOP_FOLLOW" });
+    if (followedRef.current) await browser.runtime.sendMessage({ type: "STOP_FOLLOW" }).catch(() => {});
     setFollowed(null);
     coordinator.current?.setFollowedTab(null);
     let cloudSessionDeleted = true;
@@ -364,7 +383,7 @@ function App() {
       cloudSessionDeleted = false;
     }
     await clearSkillbook();
-    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow"]);
+    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice"]);
     consentedRef.current = false;
     setConsented(false);
     setTabs([]);
@@ -372,6 +391,7 @@ function App() {
     setSnapshot(null);
     setAutoMode(false);
     setFollowSuggestion(null);
+    setPendingFollow(null);
     setSkills([]);
     setRecentRun(null);
     setLastVideo(null);
@@ -382,7 +402,7 @@ function App() {
 
   const followedTitle =
     tabs.find((tab) => tab.id === followed)?.title ||
-    (followed ? `Tab ${followed}` : "Choose a tutorial tab");
+    (followed ? `Tab ${followed}` : pendingFollow?.source.title || "Choose a tutorial tab");
   const targetTitle =
     tabs.find((tab) => tab.id === target)?.title || "Choose where Webb acts";
   const current = view.current;
@@ -463,7 +483,7 @@ function App() {
             )}
           </section>
         )}
-        {followSuggestion && consented && !followed && (
+        {followSuggestion && consented && !followed && !pendingFollow && (
           <section className="video-suggestion" aria-label="Video ready to follow">
             <span className="eyebrow">VIDEO READY</span>
             <h2>{followSuggestion.source.title}</h2>
@@ -471,62 +491,14 @@ function App() {
             <button onClick={() => void followSuggestedTab()}>Follow this video <Icon name="arrow" size={15} /></button>
           </section>
         )}
-        <section className="flow-card" aria-label="Browser connection">
-          <div className="flow-header">
-            <span className="eyebrow">LIVE WORKSPACE</span>
-            <span className={`live-badge ${followed || micOn ? "on" : ""}`}>
-              <span className="live-dot" />
-              {followed || micOn ? "LIVE" : "READY"}
-            </span>
-          </div>
-          <div className="flow-row">
-            <span className="flow-icon tutorial">01</span>
-            <div className="flow-copy">
-              <span>TUTORIAL AUDIO</span>
-              <strong title={followedTitle}>{followedTitle}</strong>
-            </div>
-            <span className="flow-state">
-              {followed ? "Following" : "Not connected"}
-            </span>
-          </div>
-          <div className="flow-bridge">
-            <span />
-            <Icon name="arrow" size={15} />
-            <span />
-          </div>
-          <div className="flow-row">
-            <span className="flow-icon target">02</span>
-            <div className="flow-copy">
-              <span>TARGET WEBSITE</span>
-              <strong title={targetTitle}>{targetTitle}</strong>
-            </div>
-            <span className="flow-state">
-              {target ? "Selected" : "Select below"}
-            </span>
-          </div>
-        </section>
         <section className="setup-section" aria-label="Choose tabs">
           <div className="section-heading">
             <h2>Connect your tabs</h2>
             <span>01 / SETUP</span>
           </div>
           <p className="section-intro">
-            On the tutorial tab, click Webb in the Chrome toolbar, then start
-            following. Switch to the target website after capture starts.
+            Choose the website Webb should control. On the tutorial tab, select Follow, then click Webb's toolbar icon to allow tab audio.
           </p>
-          <button
-            className={`follow-button ${followed ? "following" : ""}`}
-            onClick={followed ? stopFollow : followCurrentTab}
-            disabled={!consented}
-          >
-            <span className="button-icon">
-              <Icon name={followed ? "stop" : "spark"} size={17} />
-            </span>
-            <span>
-              {followed ? "Stop following" : "Follow active tutorial tab"}
-            </span>
-            <Icon name="arrow" size={17} />
-          </button>
           <div className="target-control">
             <label htmlFor="target-tab">TARGET WEBSITE</label>
             <div className="select-wrap">
@@ -542,7 +514,7 @@ function App() {
               >
                 <option value="">Choose a tab</option>
                 {tabs
-                  .filter((tab) => tab.id !== followed)
+                  .filter((tab) => tab.id !== followed && tab.id !== pendingFollow?.tabId)
                   .map((tab) => (
                     <option key={tab.id} value={tab.id}>
                       {tab.title}
@@ -551,11 +523,51 @@ function App() {
               </select>
             </div>
           </div>
+          <button
+            className={`follow-button ${followed ? "following" : ""}`}
+            onClick={followed ? stopFollow : pendingFollow ? cancelFollowSetup : followCurrentTab}
+            disabled={!consented}
+          >
+            <span className="button-icon">
+              <Icon name={followed ? "stop" : "spark"} size={17} />
+            </span>
+            <span>
+              {followed ? "Stop following" : pendingFollow ? "Cancel follow setup" : "Follow active tutorial tab"}
+            </span>
+            <Icon name="arrow" size={17} />
+          </button>
+          {pendingFollow && <p className="follow-instruction" role="status"><strong>One more click:</strong> Click the pinned Webb icon in Chrome's toolbar while the tutorial tab is active. Webb will start listening and show FOLLOWING here.</p>}
           <button className="text-button" onClick={inspect} disabled={!target || !consented}>
             <Icon name="refresh" size={14} /> Inspect page{" "}
             {snapshot ? `· ${snapshot.elements.length} controls found` : ""}
           </button>
         </section>
+        {(followed || target || pendingFollow) && <section className="flow-card connected-flow" aria-label="Browser connection">
+          <div className="flow-header">
+            <span className="eyebrow">LIVE WORKSPACE</span>
+            <span className={`live-badge ${followed || micOn ? "on" : ""}`}>
+              <span className="live-dot" />
+              {followed || micOn ? "LIVE" : "READY"}
+            </span>
+          </div>
+          <div className="flow-row">
+            <span className="flow-icon tutorial">01</span>
+            <div className="flow-copy">
+              <span>TUTORIAL AUDIO</span>
+              <strong title={followedTitle}>{followedTitle}</strong>
+            </div>
+            <span className="flow-state">{followed ? "Following" : "Not connected"}</span>
+          </div>
+          <div className="flow-bridge"><span /><Icon name="arrow" size={15} /><span /></div>
+          <div className="flow-row">
+            <span className="flow-icon target">02</span>
+            <div className="flow-copy">
+              <span>TARGET WEBSITE</span>
+              <strong title={targetTitle}>{targetTitle}</strong>
+            </div>
+            <span className="flow-state">{target ? "Selected" : "Select above"}</span>
+          </div>
+        </section>}
         {view.pending && (
           <section className="decision-card" aria-label="Confirmation required">
             <div className="decision-label">

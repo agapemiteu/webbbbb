@@ -102,6 +102,9 @@ async function execute(request: PageRequest): Promise<PageResponse> {
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
   main() {
+    const scope = globalThis as typeof globalThis & { __webbContentReady?: boolean };
+    if (scope.__webbContentReady) return;
+    scope.__webbContentReady = true;
     browser.runtime.onMessage.addListener((message: PageRequest) => {
       if (!message || !['INSPECT', 'CLICK', 'FILL'].includes(message.type)) return;
       return execute(message).catch((error): PageResponse => ({ ok: false, error: error instanceof Error ? error.message : 'Page action failed' }));
@@ -111,8 +114,10 @@ export default defineContentScript({
     let promptTimer: number | undefined;
     const dismissalKey = `webb-video-dismissed:${location.pathname}${location.search}`;
 
-    function showVideoInvite() {
+    async function showVideoInvite() {
       if (invite || sessionStorage.getItem(dismissalKey)) return;
+      const state = await browser.storage.local.get(['webbActiveFollow', 'webbPendingFollow']);
+      if (state.webbActiveFollow || state.webbPendingFollow) return;
       invite = document.createElement('div');
       invite.setAttribute('data-webb-video-invite', '');
       const shadow = invite.attachShadow({ mode: 'closed' });
@@ -147,20 +152,25 @@ export default defineContentScript({
         const button = shadow.querySelector<HTMLButtonElement>('.start');
         if (button && saved.privacyConsentVersion === '1' && saved.webbAutoMode === true) {
           button.dataset.autoStart = 'true';
-          button.textContent = 'Follow and learn';
+          button.textContent = 'Open Webb to follow';
         }
       });
       document.documentElement.appendChild(invite);
     }
 
-    document.addEventListener('play', event => {
-      if (!(event.target instanceof HTMLVideoElement)) return;
-      const video = event.target;
+    function offerForVideo(video: HTMLVideoElement) {
       if (Number.isFinite(video.duration) && video.duration < 15) return;
       window.clearTimeout(promptTimer);
       promptTimer = window.setTimeout(() => {
-        if (!video.paused && video.isConnected) showVideoInvite();
+        if (!video.paused && video.isConnected) void showVideoInvite();
       }, 1600);
+    }
+    document.addEventListener('play', event => {
+      if (!(event.target instanceof HTMLVideoElement)) return;
+      offerForVideo(event.target);
     }, true);
+    document.querySelectorAll('video').forEach(video => {
+      if (!video.paused) offerForVideo(video);
+    });
   },
 });
