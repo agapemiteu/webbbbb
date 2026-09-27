@@ -23,7 +23,7 @@ Keep the product focused on converting speech plus current page state into verif
 - Practice pages: https://webb-five-puce.vercel.app/demo/
 - Worker: https://webb-api.collins-coordinator-worker.workers.dev
 - Public source repository: https://github.com/agapemiteu/webb
-- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.4/webb-0.2.4.zip (publish after GitHub authentication is restored)
+- Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.4/webb-0.2.4.zip
 - Chrome extension is not in the Chrome Web Store. Install the ZIP with Chrome Developer mode, or clone the source and build it.
 
 The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Version 0.2.1 fixes the real Chrome failure reported in screenshots: `tabCapture.getMediaStreamId()` was requested from a side panel click without the extension being invoked on the tab. FOLLOW now arms the tutorial tab in the panel and starts capture from the pinned Webb toolbar icon click. It also uses AssemblyAI's supported `u3-rt-pro` model, no longer selects the tutorial as its own target, and can inject its page script into a tab already open before installation. The release archive SHA-256 is `ccbb48a2f7d02de7794fb1a9999a2a31fc1e1d6be0b412c7c5cb072902f703f2`. A live token and AssemblyAI WebSocket session connected successfully. Full FOLLOW transcription inside the user's Chrome profile still needs a manual check. No credential values were printed.
