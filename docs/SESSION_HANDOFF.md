@@ -26,7 +26,7 @@ Keep the product focused on converting speech plus current page state into verif
 - Public extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.2.0/webb-0.2.0.zip
 - Chrome extension is not in the Chrome Web Store. Install the ZIP with Chrome Developer mode, or clone the source and build it.
 
-The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Checks so far: `/health` returns 200, `/assemblyai-token` returns 200 with site CORS, and a live Groq request returned a 0.95 confidence click plan for a synthetic Connections link. Version 0.2.0 adds a video invitation, Auto learn after a user click, local skill memory, and verified step replay. No credential values were printed. Live Chrome microphone streaming, Gmail behavior, and sending a real email have not been verified.
+The site was redeployed on 2026-09-27 and aliased to its stable Vercel URL. The Worker is live with AssemblyAI and Groq secrets configured in Cloudflare. Checks so far: `/health` returns 200, `/assemblyai-token` returns 200 with site CORS, and a live Groq request returned a 0.95 confidence click plan for a synthetic Connections link. Version 0.2.0 adds a video invitation, Auto learn after a user click, local skill memory, and verified step replay. Commit `91ceada` was pushed, and the public `v0.2.0` release contains `webb-0.2.0.zip` with SHA-256 `47c542bd0a025791577cf2a7c52b71eb6ea6ece9019247b66cea2b0d47d22ebe`. No credential values were printed. Live Chrome microphone streaming, Gmail behavior, and sending a real email have not been verified.
 
 ## Safety and demo limits
 
