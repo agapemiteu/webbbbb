@@ -2,7 +2,7 @@
 
 ## Install the extension
 
-Download the [Webb 0.2.4 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.2.4/webb-0.2.4.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
+Download the [Webb 0.3.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.3.0/webb-0.3.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
 
 To build from source instead:
 
@@ -17,7 +17,9 @@ Select `.output/chrome-mv3` in Chrome. Pin Webb, then click its icon to open the
 
 ## Run the guided demo
 
-Open the [practice site](https://webb-five-puce.vercel.app/demo/) and the [spoken walkthrough](https://webb-five-puce.vercel.app/demo/tutorial.html) in separate tabs. On the walkthrough tab, select **Follow this tab**. If Webb shows **Ready to listen**, click the blue Webb icon in Chrome's top toolbar on that same tab. Wait for **FOLLOWING**. Choose the practice site as the target and play one spoken step at a time. Webb shows tutorial speech before a target is selected, but only acts after you choose a separate target.
+Open the [practice site](https://webb-five-puce.vercel.app/demo/) and the [spoken walkthrough](https://webb-five-puce.vercel.app/demo/tutorial.html) in separate tabs. On the source tab, choose **Act on instructions**, select the practice site as the target, and press **Start listening**. In Chrome's sharing dialog, choose the source under **Chrome Tab**, turn on **Share tab audio**, and share it. Wait for **Connected**, then play one spoken step at a time. The source can be a tutorial, lecture, meeting, or other audio tab.
+
+For a lecture or video transcript, choose **Capture notes** instead. Speech appears in Webb and stays in this browser after you stop. Use **Copy notes for Docs** and paste into your document. Direct Google Docs document editing is not supported yet.
 
 To learn the walkthrough as a skill, turn on **Save verified steps** in Settings before following. Webb saves verified browser steps when you stop FOLLOW. Select a target page and use **Run** in Skills to replay it. Webb asks for new form values and pauses for confirmation before consequential actions.
 

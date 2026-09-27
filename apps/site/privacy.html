@@ -29,11 +29,11 @@
 
       <h2>Data Webb handles</h2>
       <ul>
-        <li><strong>Audio:</strong> Webb captures microphone audio in TALK or audio from the tutorial tab you choose in FOLLOW, only after you start that mode. Audio is streamed to AssemblyAI for speech transcription.</li>
-        <li><strong>Speech transcripts:</strong> Transcripts from you or the followed tutorial are sent to Webb's Cloudflare Worker. The Worker may send the transcript to Groq to classify the instruction and propose a browser action.</li>
+        <li><strong>Audio:</strong> Webb captures microphone audio in TALK or audio from the source tab you choose in FOLLOW, only after you start that mode and approve Chrome's tab-sharing prompt. Audio is streamed to AssemblyAI for speech transcription.</li>
+        <li><strong>Speech transcripts:</strong> In action mode, transcripts from you or the followed source are sent to Webb's Cloudflare Worker. The Worker may send the transcript to Groq to classify an instruction and propose a browser action. In notes mode, source transcripts stay in Chrome local storage.</li>
         <li><strong>Page context:</strong> When planning an action, Webb sends the target page URL, title, and visible interactive control roles and labels to the Worker and Groq. Existing form field values and password values are excluded from this page context. Webb does not fill password fields.</li>
         <li><strong>Session state:</strong> Cloudflare stores the transcript, procedure progress, page context, and action results for the active session. Session data expires after 24 hours without activity. You can withdraw consent in Webb's settings to stop capture and request deletion of the active session.</li>
-        <li><strong>Local memory:</strong> Chrome local storage holds your settings, active session identifier, last followed video title and URL, and saved skills. Skills contain verified control labels and roles, not field values. Webb asks for new values when replaying a form step. Withdrawing consent clears this local memory.</li>
+        <li><strong>Local memory:</strong> Chrome local storage holds your settings, active session identifier, last followed source title and URL, captured notes, and saved skills. Skills contain verified control labels and roles, not field values. Webb asks for new values when replaying a form step. Withdrawing consent clears this local memory.</li>
       </ul>
 
       <h2>Why data is used</h2>

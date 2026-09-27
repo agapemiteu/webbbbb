@@ -232,7 +232,7 @@ export class SessionCoordinator {
       && !isExplicitConfirmation(turn.text, this.view.pending.description)
       && !/\b(no|stop|don't|cancel|wait)\b/i.test(turn.text)) this.cancelSkill();
     if (turn.source === 'user' && this.activeSkill && !this.view.pending) this.cancelSkill();
-    this.log(`${turn.source === 'user' ? 'YOU' : 'TUTORIAL'}: ${turn.text}`);
+    this.log(`${turn.source === 'user' ? 'YOU' : 'SOURCE'}: ${turn.text}`);
     this.persist({ [turn.source === 'user' ? 'latestUserTurn' : 'latestTutorialTurn']: turn, status: 'planning' });
     if (turn.source === 'user') {
       this.generation++;

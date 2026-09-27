@@ -4,15 +4,13 @@ import { browser } from "wxt/browser";
 import { SessionCoordinator, type SessionView } from "../../src/session";
 import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
-import { clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
+import { beginVideoRun, clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
 import { requestedSkill, videoSource, type RecentRun, type SkillSource, type WebbSkill } from "../../src/skill-model";
 import { targetForFollow } from "../../src/follow-target";
 import "./style.css";
 
-type TabOption = { id: number; title: string };
+type TabOption = { id: number; title: string; url: string };
 type FollowSuggestion = { tabId: number; source: SkillSource; createdAt: number };
-type PendingFollow = { tabId: number; apiBase: string; source: SkillSource; requestedAt: number };
-type FollowPhase = { tabId: number; step: 'toolbar' | 'capturing' | 'connected' | 'error'; detail?: string; updatedAt: number };
 const DEFAULT_API_BASE = "https://webb-api.collins-coordinator-worker.workers.dev";
 function Icon({
   name,
@@ -76,10 +74,14 @@ function App() {
   const [tabs, setTabs] = useState<TabOption[]>([]);
   const [target, setTarget] = useState<number | null>(null);
   const [followed, setFollowed] = useState<number | null>(null);
+  const [followStarting, setFollowStarting] = useState(false);
   const [micOn, setMicOn] = useState(false);
+  const [micStarting, setMicStarting] = useState(false);
   const [micPermissionIssue, setMicPermissionIssue] = useState(false);
   const [partial, setPartial] = useState("");
   const [latestTutorialText, setLatestTutorialText] = useState("");
+  const [followMode, setFollowMode] = useState<'actions' | 'notes'>('actions');
+  const [sourceNotes, setSourceNotes] = useState<string[]>([]);
   const [snapshot, setSnapshot] = useState<PageSnapshot | null>(null);
   const [message, setMessage] = useState(
     "Choose a target website to get started.",
@@ -93,8 +95,6 @@ function App() {
   const [recentRun, setRecentRun] = useState<RecentRun | null>(null);
   const [lastVideo, setLastVideo] = useState<SkillSource | null>(null);
   const [followSuggestion, setFollowSuggestion] = useState<FollowSuggestion | null>(null);
-  const [pendingFollow, setPendingFollow] = useState<PendingFollow | null>(null);
-  const [followPhase, setFollowPhase] = useState<FollowPhase | null>(null);
   const [skillName, setSkillName] = useState("");
   const [skillValue, setSkillValue] = useState("");
   const [view, setView] = useState<SessionView>({
@@ -106,14 +106,22 @@ function App() {
   const apiRef = useRef(apiBase);
   const targetRef = useRef(target);
   const followedRef = useRef(followed);
+  const followModeRef = useRef(followMode);
+  const sourceNotesRef = useRef(sourceNotes);
   const consentedRef = useRef(consented);
   const skillsRef = useRef(skills);
   const viewRef = useRef(view);
   const microphone = useRef<Transcriber | null>(null);
+  const micStartingRef = useRef(false);
+  const followedAudio = useRef<Transcriber | null>(null);
+  const followStartingRef = useRef(false);
+  const sourceDetailsRef = useRef<SkillSource | null>(null);
   const coordinator = useRef<SessionCoordinator | null>(null);
   apiRef.current = apiBase;
   targetRef.current = target;
   followedRef.current = followed;
+  followModeRef.current = followMode;
+  sourceNotesRef.current = sourceNotes;
   consentedRef.current = consented;
   skillsRef.current = skills;
   viewRef.current = view;
@@ -133,6 +141,7 @@ function App() {
         .map((tab) => ({
           id: tab.id!,
           title: tab.title || tab.url || "Untitled tab",
+          url: tab.url || '',
         })),
     );
   }
@@ -144,7 +153,8 @@ function App() {
     if (memory.recent?.source) setSkillName(current => current || memory.recent!.source!.title.slice(0, 80));
   }
   useEffect(() => {
-    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice", "webbFollowPhase"]).then((saved) => {
+    void browser.storage.local.remove(['webbActiveFollow', 'webbPendingFollow', 'webbFollowNotice', 'webbFollowPhase']);
+    browser.storage.local.get(["apiBase", "privacyConsentVersion", "webbAutoMode", "webbFollowSuggestion", "webbFollowMode", "webbSourceNotesV1"]).then((saved) => {
       if (typeof saved.apiBase === "string" && saved.apiBase !== "http://localhost:8787") setApiBase(saved.apiBase);
       if (saved.privacyConsentVersion === "1") {
         consentedRef.current = true;
@@ -152,14 +162,8 @@ function App() {
         void refreshTabs();
       }
       if (saved.webbAutoMode === true) setAutoMode(true);
-      if (typeof saved.webbActiveFollow === 'number') setFollowed(saved.webbActiveFollow);
-      const pending = saved.webbPendingFollow as PendingFollow | undefined;
-      if (pending?.tabId && Date.now() - pending.requestedAt < 2 * 60_000) {
-        setPendingFollow(pending);
-        setMessage('Click the pinned Webb toolbar icon on the tutorial tab to start FOLLOW.');
-      }
-      if (typeof saved.webbFollowNotice === 'string') setMessage(saved.webbFollowNotice);
-      if (saved.webbFollowPhase && typeof saved.webbFollowPhase === 'object') setFollowPhase(saved.webbFollowPhase as FollowPhase);
+      if (saved.webbFollowMode === 'notes') setFollowMode('notes');
+      if (Array.isArray(saved.webbSourceNotesV1)) setSourceNotes(saved.webbSourceNotesV1.filter((line): line is string => typeof line === 'string').slice(-100));
       const suggestion = saved.webbFollowSuggestion as FollowSuggestion | undefined;
       if (suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000) setFollowSuggestion(suggestion);
     });
@@ -167,10 +171,6 @@ function App() {
     const activated = ({ tabId }: { tabId: number }) => {
       if (!consentedRef.current) return;
       void refreshTabs();
-    };
-    const onMessage = (event: { type?: string; turn?: TranscriptTurn }) => {
-      if (event.type === "TRANSCRIPT" && event.turn?.source === "followed_tab")
-        handleTurn(event.turn);
     };
     const onStorageChanged = (changes: Record<string, unknown>, area: string) => {
       if (area !== 'local') return;
@@ -181,29 +181,6 @@ function App() {
           setFollowSuggestion(suggestion?.tabId && suggestion.source && Date.now() - suggestion.createdAt < 10 * 60_000 ? suggestion : null);
         });
       }
-      if ('webbActiveFollow' in changes) {
-        void browser.storage.local.get('webbActiveFollow').then(saved => {
-          const sourceTab = typeof saved.webbActiveFollow === 'number' ? saved.webbActiveFollow : null;
-          setFollowed(sourceTab);
-          coordinator.current?.setFollowedTab(sourceTab);
-          if (sourceTab && targetRef.current === sourceTab) { targetRef.current = null; setTarget(null); }
-        });
-      }
-      if ('webbPendingFollow' in changes) {
-        void browser.storage.local.get('webbPendingFollow').then(saved => {
-          const pending = (saved.webbPendingFollow as PendingFollow | undefined) || null;
-          setPendingFollow(pending);
-          if (pending) setMessage('Click the pinned Webb toolbar icon on the tutorial tab to start FOLLOW.');
-        });
-      }
-      if ('webbFollowNotice' in changes) {
-        void browser.storage.local.get('webbFollowNotice').then(saved => {
-          if (typeof saved.webbFollowNotice === 'string') setMessage(saved.webbFollowNotice);
-        });
-      }
-      if ('webbFollowPhase' in changes) {
-        void browser.storage.local.get('webbFollowPhase').then(saved => setFollowPhase((saved.webbFollowPhase as FollowPhase | undefined) || null));
-      }
       if ('webbMicPermissionGrantedAt' in changes) {
         setMicPermissionIssue(false);
         setMessage('Microphone access is ready. Press the mic to talk to Webb.');
@@ -211,33 +188,46 @@ function App() {
     };
     browser.tabs.onActivated.addListener(activated);
     browser.tabs.onUpdated.addListener(refreshTabs);
-    browser.runtime.onMessage.addListener(onMessage);
     browser.storage.onChanged.addListener(onStorageChanged);
     return () => {
       browser.tabs.onActivated.removeListener(activated);
       browser.tabs.onUpdated.removeListener(refreshTabs);
-      browser.runtime.onMessage.removeListener(onMessage);
       browser.storage.onChanged.removeListener(onStorageChanged);
       void microphone.current?.stop();
+      void followedAudio.current?.stop();
+      void browser.storage.local.remove('webbActiveFollow');
     };
   }, []);
 
   function handleTurn(turn: TranscriptTurn) {
     if (!turn.final) {
       setPartial(
-        `${turn.source === "user" ? "YOU" : "TUTORIAL"}: ${turn.text}`,
+        `${turn.source === "user" ? "YOU" : "SOURCE"}: ${turn.text}`,
       );
       return;
     }
     setPartial("");
     if (turn.source === 'followed_tab') {
       setLatestTutorialText(turn.text);
+      if (followModeRef.current === 'notes') {
+        const next = [...sourceNotesRef.current, turn.text].slice(-100);
+        sourceNotesRef.current = next;
+        setSourceNotes(next);
+        void browser.storage.local.set({ webbSourceNotesV1: next });
+        return;
+      }
       if (!targetRef.current || targetRef.current === followedRef.current) {
-        setMessage('Tutorial audio is working. Choose a different target website before Webb acts.');
+        setMessage('Source audio is working. Choose a different target website before Webb acts.');
         return;
       }
     }
     if (turn.source === 'user' && viewRef.current.skill?.status !== 'needs_value') {
+      if (/^(?:what(?:'s| is) playing|what (?:are you|is webb) listening to|which source)[?.!\s]*$/i.test(turn.text.trim())) {
+        setMessage(followedAudio.current && sourceDetailsRef.current
+          ? `Listening to ${sourceDetailsRef.current.title}.`
+          : 'Source audio is not connected. Select Start listening and share the source tab with audio.');
+        return;
+      }
       const skill = requestedSkill(turn.text, skillsRef.current);
       if (skill !== undefined) {
         if (skill) runSkill(skill);
@@ -268,7 +258,9 @@ function App() {
     }
   }
   async function startMic() {
-    if (!consented) return;
+    if (!consented || micStartingRef.current) return;
+    micStartingRef.current = true;
+    setMicStarting(true);
     try {
       if (micOn) {
         await microphone.current?.stop();
@@ -282,7 +274,13 @@ function App() {
         audio: { echoCancellation: true },
         video: false,
       });
-      const transcriber = new Transcriber("user", handleTurn);
+      const transcriber = new Transcriber("user", handleTurn, detail => {
+        void microphone.current?.stop();
+        microphone.current = null;
+        setMicOn(false);
+        coordinator.current?.setTalkActive(false);
+        setMessage(detail);
+      });
       if (!followedRef.current) coordinator.current?.startManualMemory();
       microphone.current = transcriber;
       await transcriber.start(stream, apiRef.current);
@@ -298,38 +296,72 @@ function App() {
       const permissionIssue = /permission dismissed|permission denied|notallowederror/i.test(detail);
       setMicPermissionIssue(permissionIssue);
       setMessage(permissionIssue ? 'Microphone permission needs to be granted in a Chrome tab.' : detail);
+    } finally {
+      micStartingRef.current = false;
+      setMicStarting(false);
     }
   }
   async function followTab(tab: { id?: number; url?: string; title?: string }) {
-    if (!consented) return;
+    if (!consented || followStartingRef.current || followedAudio.current) return;
+    followStartingRef.current = true;
+    setFollowStarting(true);
     try {
       if (!tab?.id || !tab.url?.startsWith("http"))
-        throw new Error("Activate the tutorial tab first.");
+        throw new Error("Open the source tab first.");
       const [active] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (active?.id !== tab.id) throw new Error('Activate the video tab before starting FOLLOW.');
+      if (active?.id !== tab.id) throw new Error('Open the source tab before starting.');
       const safeTarget = targetForFollow(targetRef.current, tab.id);
       if (safeTarget !== targetRef.current) { targetRef.current = safeTarget; setTarget(safeTarget); setSnapshot(null); }
-      const source = videoSource(tab.title || 'Tutorial', tab.url);
+      const source = videoSource(tab.title || 'Source tab', tab.url);
       if (!source) throw new Error('This tab cannot be followed. Choose a website with audio.');
-      const streamIdPromise = browser.tabCapture.getMediaStreamId({ targetTabId: tab.id }).catch(() => null);
       setLatestTutorialText('');
-      setFollowPhase(null);
-      await browser.storage.local.remove('webbFollowPhase');
-      await browser.storage.local.remove('webbFollowNotice');
-      try {
-        const streamId = await streamIdPromise;
-        const result = streamId ? await browser.runtime.sendMessage({ type: 'CAPTURE_FOLLOW', tabId: tab.id, apiBase: apiRef.current, streamId, source }) as { ok?: boolean; error?: string } : null;
-        if (result?.ok) {
-          setMessage(`Following ${source.title}.`);
-          return;
-        }
-      } catch { /* Chrome may require a toolbar click to grant this tab access. */ }
-      await browser.storage.local.set({ webbPendingFollow: { tabId: tab.id, apiBase: apiRef.current, source, requestedAt: Date.now() } satisfies PendingFollow });
-      await browser.storage.local.remove('webbFollowSuggestion');
-      setFollowSuggestion(null);
-      setMessage('Waiting for the Webb toolbar click on this tutorial tab.');
+      setMessage('Choose this source tab in Chrome and turn on Share tab audio.');
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        audio: { suppressLocalAudioPlayback: false },
+        video: { displaySurface: 'browser' },
+        systemAudio: 'exclude',
+      } as DisplayMediaStreamOptions);
+      const surface = stream.getVideoTracks()[0]?.getSettings().displaySurface;
+      if (surface && surface !== 'browser') {
+        stream.getTracks().forEach(track => track.stop());
+        throw new Error('Choose a Chrome tab, then turn on Share tab audio.');
+      }
+      if (!stream.getAudioTracks().length) {
+        stream.getTracks().forEach(track => track.stop());
+        throw new Error('Tab audio was not shared. Try again and enable Share tab audio.');
+      }
+      setMessage('Connecting source audio to AssemblyAI...');
+      const transcriber = new Transcriber('followed_tab', handleTurn, detail => {
+        void stopFollow().then(() => setMessage(detail));
+      });
+      followedAudio.current = transcriber;
+      try { await transcriber.start(stream, apiRef.current); }
+      catch (error) {
+        await transcriber.stop();
+        followedAudio.current = null;
+        throw error;
+      }
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => { void stopFollow(); }, { once: true });
+      stream.getAudioTracks()[0]?.addEventListener('ended', () => { void stopFollow(); }, { once: true });
+      if (followModeRef.current === 'notes') { sourceNotesRef.current = []; setSourceNotes([]); void browser.storage.local.set({ webbSourceNotesV1: [] }); }
+      await beginVideoRun(source);
+      await browser.storage.local.set({ webbActiveFollow: tab.id });
+      setFollowed(tab.id);
+      coordinator.current?.setFollowedTab(tab.id);
+      sourceDetailsRef.current = source;
+      setMessage('Source connected. Play it to hear speech in Webb.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Follow failed");
+      await followedAudio.current?.stop();
+      followedAudio.current = null;
+      setFollowed(null);
+      await browser.storage.local.remove('webbActiveFollow');
+      const detail = error instanceof Error ? error.message : 'Follow failed';
+      setMessage(error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Tab audio was not shared. Select Start listening, choose Chrome Tab, and enable Share tab audio.'
+        : detail);
+    } finally {
+      followStartingRef.current = false;
+      setFollowStarting(false);
     }
   }
   function openMicrophonePermission() {
@@ -342,31 +374,38 @@ function App() {
   async function followSuggestedTab() {
     if (!followSuggestion) return;
     const tab = await browser.tabs.get(followSuggestion.tabId).catch(() => null);
-    if (!tab) { setFollowSuggestion(null); setMessage('The video tab is no longer open.'); return; }
+    if (!tab) { setFollowSuggestion(null); setMessage('The source tab is no longer open.'); return; }
     await followTab(tab);
   }
+  async function copySourceNotes() {
+    try {
+      await navigator.clipboard.writeText(sourceNotes.join('\n\n'));
+      setMessage('Notes copied. Paste them into Google Docs or another editor.');
+    } catch {
+      setMessage('Chrome could not copy the notes. Select the text in Webb and copy it.');
+    }
+  }
   async function stopFollow() {
-    await browser.runtime.sendMessage({ type: "STOP_FOLLOW" }).catch(() => {});
+    const capture = followedAudio.current;
+    if (!capture) return;
+    followedAudio.current = null;
+    await capture.stop();
+    sourceDetailsRef.current = null;
     await browser.storage.local.remove('webbActiveFollow');
-    await browser.storage.local.remove('webbFollowPhase');
-    if (autoMode) {
+    if (followModeRef.current === 'notes') {
+      setMessage('Stopped listening. Notes remain in Webb for copying.');
+    } else if (autoMode) {
       try {
         const memory = await loadSkillbook();
         if (memory.recent?.steps.length) {
           const skill = await saveRecentAsSkill(memory.recent.source?.title || 'Browser workflow');
           setMessage(`Saved ${skill.name} as a reusable skill.`);
-        } else setMessage('No verified steps to save from this video.');
+        } else setMessage('No verified actions were found to save.');
       } catch { setMessage('FOLLOW stopped. The skill could not be saved.'); }
-    } else setMessage("Stopped following tutorial audio.");
+    } else setMessage('Stopped listening to source audio.');
     setFollowed(null);
     setLatestTutorialText('');
     coordinator.current?.setFollowedTab(null);
-  }
-  async function cancelFollowSetup() {
-    await browser.storage.local.remove('webbPendingFollow');
-    await browser.storage.local.remove('webbFollowPhase');
-    setPendingFollow(null);
-    setMessage('FOLLOW setup cancelled.');
   }
   async function saveSkill() {
     try {
@@ -383,7 +422,7 @@ function App() {
   async function changeAutoMode(enabled: boolean) {
     setAutoMode(enabled);
     await browser.storage.local.set({ webbAutoMode: enabled });
-    setMessage(enabled ? 'Auto learn is on for the tutorials you follow.' : 'Auto learn is off. You can still save a skill yourself.');
+    setMessage(enabled ? 'Verified actions will be saved as a skill.' : 'Automatic skill saving is off. You can still save one yourself.');
   }
   async function useSkillValue() {
     try {
@@ -415,7 +454,8 @@ function App() {
     await microphone.current?.stop();
     microphone.current = null;
     setMicOn(false);
-    if (followedRef.current) await browser.runtime.sendMessage({ type: "STOP_FOLLOW" }).catch(() => {});
+    await followedAudio.current?.stop();
+    followedAudio.current = null;
     setFollowed(null);
     coordinator.current?.setFollowedTab(null);
     let cloudSessionDeleted = true;
@@ -425,7 +465,7 @@ function App() {
       cloudSessionDeleted = false;
     }
     await clearSkillbook();
-    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice"]);
+    await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice", "webbSourceNotesV1", "webbFollowMode"]);
     consentedRef.current = false;
     setConsented(false);
     setTabs([]);
@@ -433,10 +473,11 @@ function App() {
     setSnapshot(null);
     setAutoMode(false);
     setFollowSuggestion(null);
-    setPendingFollow(null);
     setSkills([]);
     setRecentRun(null);
     setLastVideo(null);
+    setSourceNotes([]);
+    setFollowMode('actions');
     setMessage(cloudSessionDeleted
       ? "Webb stopped and session data was cleared."
       : "Webb stopped. Previously sent data will expire within 24 hours.");
@@ -444,7 +485,7 @@ function App() {
 
   const followedTitle =
     tabs.find((tab) => tab.id === followed)?.title ||
-    (followed ? `Tab ${followed}` : pendingFollow?.source.title || "Choose a tutorial tab");
+    (followed ? `Tab ${followed}` : "Choose a source tab");
   const targetTitle =
     tabs.find((tab) => tab.id === target)?.title || "Choose where Webb acts";
   const current = view.current;
@@ -485,7 +526,7 @@ function App() {
             <span className="eyebrow">BEFORE YOU START</span>
             <h1 id="privacy-consent-title">What Webb reads and sends</h1>
             <p>
-              When you start TALK or FOLLOW, Webb sends your chosen microphone or tutorial audio to AssemblyAI for transcription. It sends the transcript and visible controls from your selected page to Webb's Worker and Groq to plan an action. Webb stores the transcript, page context, and action progress in a temporary Cloudflare session for up to 24 hours after your last activity.
+              When you start TALK or FOLLOW, Webb sends your chosen microphone or source-tab audio to AssemblyAI for transcription. In action mode it sends speech and visible controls from the selected page to Webb's Worker and Groq. Notes mode keeps the transcript in this browser until you clear it. Action progress is kept in a temporary Cloudflare session for up to 24 hours after your last activity.
             </p>
             <p>
               Audio and page data are used to carry out your instructions. They are not used for advertising. Review the <a href="https://webb-five-puce.vercel.app/privacy.html" target="_blank" rel="noreferrer">privacy policy</a> before continuing.
@@ -532,28 +573,32 @@ function App() {
             )}
           </section>
         )}
-        {followSuggestion && consented && !followed && !pendingFollow && (
+        {followSuggestion && consented && !followed && (
           <section className="video-suggestion" aria-label="Video ready to follow">
-            <span className="eyebrow">VIDEO READY</span>
+            <span className="eyebrow">SOURCE READY</span>
             <h2>{followSuggestion.source.title}</h2>
-            <p>Webb can hear this tab, find actionable steps, and build a reusable skill from verified actions.</p>
-            <button onClick={() => void followSuggestedTab()}>Follow this video <Icon name="arrow" size={15} /></button>
+            <p>Webb can listen to this source and either act on instructions or capture notes.</p>
+            <button onClick={() => void followSuggestedTab()}>Listen to this source <Icon name="arrow" size={15} /></button>
           </section>
         )}
         <section className="setup-section" aria-label="Choose tabs">
           <div className="section-heading">
-            <h2>Follow a tutorial</h2>
+            <h2>Listen to a source</h2>
           </div>
           <p className="section-intro">
-            Play a tutorial in this tab. Webb listens and acts on the website you choose below.
+            Use a video, lecture, meeting, or walkthrough in the active tab. Chrome will ask you to share that tab with audio.
           </p>
+          <div className="source-mode" role="group" aria-label="What Webb should do with source audio">
+            <button type="button" aria-pressed={followMode === 'actions'} className={followMode === 'actions' ? 'selected' : ''} disabled={!!followed || followStarting} onClick={() => { setFollowMode('actions'); void browser.storage.local.set({ webbFollowMode: 'actions' }); }}>Act on instructions<small>Use spoken steps on another tab</small></button>
+            <button type="button" aria-pressed={followMode === 'notes'} className={followMode === 'notes' ? 'selected' : ''} disabled={!!followed || followStarting} onClick={() => { setFollowMode('notes'); void browser.storage.local.set({ webbFollowMode: 'notes' }); }}>Capture notes<small>Collect speech in Webb, then copy it</small></button>
+          </div>
           <div className="target-control">
-            <label htmlFor="target-tab">ACT ON THIS TAB</label>
+            <label htmlFor="target-tab">{followMode === 'actions' ? 'ACT ON THIS TAB' : 'TARGET FOR YOUR COMMANDS (OPTIONAL)'}</label>
             <div className="select-wrap">
               <select
                 id="target-tab"
                 value={target || ""}
-                disabled={!consented}
+                disabled={!consented || followStarting}
                 onChange={(event) => {
                   const id = Number(event.target.value) || null;
                   setTarget(id);
@@ -562,7 +607,7 @@ function App() {
               >
                 <option value="">Choose a tab</option>
                 {tabs
-                  .filter((tab) => tab.id !== followed && tab.id !== pendingFollow?.tabId)
+                  .filter((tab) => tab.id !== followed)
                   .map((tab) => (
                     <option key={tab.id} value={tab.id}>
                       {tab.title}
@@ -571,27 +616,28 @@ function App() {
               </select>
             </div>
           </div>
+          {followMode === 'actions' && tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">For lecture notes in Google Docs, choose Capture notes and copy the transcript into your document. Direct document writing is not supported yet.</p>}
           <button
             className={`follow-button ${followed ? "following" : ""}`}
-            onClick={followed ? stopFollow : pendingFollow ? cancelFollowSetup : followCurrentTab}
-            disabled={!consented}
+            onClick={followed ? stopFollow : followCurrentTab}
+            disabled={!consented || followStarting}
           >
             <span className="button-icon">
               <Icon name={followed ? "stop" : "spark"} size={17} />
             </span>
             <span>
-              {followed ? "Stop following" : pendingFollow ? "Cancel" : "Follow this tab"}
+              {followed ? "Stop listening" : followStarting ? "Connecting..." : "Start listening"}
             </span>
             <Icon name="arrow" size={17} />
           </button>
-          {pendingFollow && <p className="follow-instruction" role="status"><strong>{followPhase?.step === 'error' ? 'Could not connect' : followPhase?.step === 'toolbar' || followPhase?.step === 'capturing' ? 'Connecting audio' : 'Ready to listen'}</strong><br />{followPhase?.step === 'error' ? followPhase.detail : followPhase?.step === 'toolbar' || followPhase?.step === 'capturing' ? 'Webb received the toolbar click. Connecting to AssemblyAI...' : 'Click the blue Webb icon in Chrome’s top toolbar on the tutorial tab. The microphone button below is for TALK.'}</p>}
-          {followed && latestTutorialText && <p className="follow-instruction" role="status"><strong>Just heard:</strong> {latestTutorialText}{!target && <><br />Choose a target website for browser actions.</>}</p>}
+          {followed && latestTutorialText && <p className="follow-instruction" role="status"><strong>Just heard:</strong> {latestTutorialText}{followMode === 'actions' && !target && <><br />Choose a target website for browser actions.</>}</p>}
         </section>
-        {(followed || target || pendingFollow) && <section className="connection-summary" aria-label="Browser connection">
-          <div><span>LISTENING TO</span><strong title={followedTitle}>{followedTitle}</strong><small>{followed ? 'Connected' : pendingFollow ? 'Waiting to connect' : 'Choose a tutorial'}</small></div>
+        {(followed || (followMode === 'actions' && target)) && <section className="connection-summary" aria-label="Browser connection">
+          <div><span>LISTENING TO</span><strong title={followedTitle}>{followedTitle}</strong><small>{followed ? 'Connected' : 'Choose a source'}</small></div>
           <Icon name="arrow" size={15} />
-          <div><span>ACTING ON</span><strong title={targetTitle}>{targetTitle}</strong><small>{target ? 'Selected' : 'Choose a tab above'}</small></div>
+          <div><span>{followMode === 'notes' ? 'CAPTURING' : 'ACTING ON'}</span><strong title={followMode === 'notes' ? 'Notes in Webb' : targetTitle}>{followMode === 'notes' ? 'Notes in Webb' : targetTitle}</strong><small>{followMode === 'notes' ? 'Copy to your document' : target ? 'Selected' : 'Choose a tab above'}</small></div>
         </section>}
+        {followMode === 'notes' && sourceNotes.length > 0 && <section className="source-notes" aria-label="Captured notes"><div className="section-heading"><h2>Notes</h2><span>{sourceNotes.length} {sourceNotes.length === 1 ? 'LINE' : 'LINES'}</span></div><div className="source-notes-text">{sourceNotes.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}</div><button type="button" onClick={() => void copySourceNotes()}>Copy notes for Docs</button></section>}
         {view.pending && (
           <section className="decision-card" aria-label="Confirmation required">
             <div className="decision-label">
@@ -599,7 +645,7 @@ function App() {
             </div>
             <h2>{view.pending.description}</h2>
             <p>
-              This action requires your approval. Tutorial audio cannot approve
+              This action requires your approval. Source audio cannot approve
               it.
             </p>
             <div className="decision-actions">
@@ -653,7 +699,7 @@ function App() {
               <>
                 <div className="match-line">
                   <span>
-                    {current.source === "user" ? "YOU SAID" : "TUTORIAL SAYS"}
+                    {current.source === "user" ? "YOU SAID" : "SOURCE SAYS"}
                   </span>
                   <strong>{current.heard}</strong>
                 </div>
@@ -670,7 +716,7 @@ function App() {
             )}
           </section>
         )}
-        {(followed || view.procedure.steps.length > 0) && <section className="progress-section" aria-label="Procedure progress">
+        {((followMode === 'actions' && followed) || view.procedure.steps.length > 0) && <section className="progress-section" aria-label="Procedure progress">
           <div className="section-heading">
             <h2>Progress</h2>
             <span>
@@ -709,7 +755,7 @@ function App() {
           <section className="skills-section" aria-label="Reusable skills">
             <div className="section-heading"><h2>Skills</h2><span>{skills.length} SAVED</span></div>
             <p className="section-intro">Webb remembers verified steps and matches them to the controls on your next page.</p>
-            {lastVideo && <div className="last-video"><span>LAST VIDEO</span><a href={lastVideo.url} target="_blank" rel="noreferrer">{lastVideo.title}</a></div>}
+            {lastVideo && <div className="last-video"><span>LAST SOURCE</span><a href={lastVideo.url} target="_blank" rel="noreferrer">{lastVideo.title}</a></div>}
             {recentRun && recentRun.steps.length > 0 && (
               <div className="recent-skill">
                 <span className="eyebrow">READY TO SAVE</span>
@@ -724,10 +770,10 @@ function App() {
                 <button onClick={() => runSkill(skill)} disabled={!target}>Run</button>
                 <button className="remove-skill" onClick={() => void removeSkill(skill.id)} aria-label={`Remove ${skill.name}`}>×</button>
               </li>)}
-            </ul> : <p className="empty-note">Follow a tutorial, verify a few steps, then save the workflow.</p>}
+            </ul> : <p className="empty-note">Follow a source with actionable steps, verify them, then save the workflow.</p>}
           </section>
         ) : null}
-        {(view.events.length > 0 || followed) && <section className="activity-section">
+        {(view.events.length > 0 || (followMode === 'actions' && followed)) && <section className="activity-section">
           <button
             className="activity-toggle"
             aria-expanded={activityOpen}
@@ -767,7 +813,7 @@ function App() {
           <button
             className={`mic-button ${micOn ? "active" : ""}`}
             onClick={startMic}
-            disabled={!consented}
+            disabled={!consented || micStarting}
             aria-label={micOn ? "Stop microphone" : "Start microphone"}
             title={micOn ? "Stop microphone" : "Talk to Webb"}
           >

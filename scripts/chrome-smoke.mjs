@@ -1,9 +1,13 @@
+import { readFile, writeFile } from 'node:fs/promises';
+
 const port = Number(process.env.WEBB_CDP_PORT || 9225);
 const base = `http://127.0.0.1:${port}`;
+if (process.env.WEBB_ISOLATED_PROFILE !== '1') throw new Error('Run this smoke test only in an isolated Chromium profile. Set WEBB_ISOLATED_PROFILE=1 to confirm.');
 
 class DevTools {
-  constructor(socket) {
+  constructor(socket, targetId) {
     this.socket = socket;
+    this.targetId = targetId;
     this.nextId = 0;
     this.pending = new Map();
     this.events = [];
@@ -23,7 +27,7 @@ class DevTools {
       socket.onopen = resolve;
       socket.onerror = reject;
     });
-    return new DevTools(socket);
+    return new DevTools(socket, target.id);
   }
 
   command(method, params = {}) {
@@ -45,7 +49,10 @@ class DevTools {
     return result.value;
   }
 
-  close() { this.socket.close(); }
+  async close() {
+    await fetch(`${base}/json/close/${this.targetId}`).catch(() => {});
+    this.socket.close();
+  }
 }
 
 async function targets() {
@@ -58,7 +65,7 @@ async function openPage(url) {
   return DevTools.connect(await response.json());
 }
 
-async function waitFor(client, expression, label, timeoutMs = 15000) {
+async function waitFor(client, expression, label, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const value = await client.evaluate(expression).catch(() => null);
@@ -73,6 +80,11 @@ const existingPanel = (await targets()).find(target => target.type === 'page'
 const extensionId = process.env.WEBB_EXTENSION_ID || (existingPanel && new URL(existingPanel.url).hostname);
 if (!extensionId) throw new Error('Open Webb sidepanel.html in the isolated Chromium profile first.');
 console.log(`Webb extension loaded: ${extensionId}`);
+for (const target of await targets()) {
+  if (target.type === 'page' && (target.url.includes('qa=webbqa') || target.url === `chrome-extension://${extensionId}/sidepanel.html`)) {
+    await fetch(`${base}/json/close/${target.id}`);
+  }
+}
 
 const runId = `webbqa${Date.now()}`;
 const site = await openPage(`https://webb-five-puce.vercel.app/demo/?qa=${runId}`);
@@ -80,7 +92,13 @@ await waitFor(site, 'document.readyState === "complete" && document.title.includ
 console.log(`Practice site loaded: ${await site.evaluate('document.title')}`);
 
 const panel = await openPage(`chrome-extension://${extensionId}/sidepanel.html`);
-await waitFor(panel, 'Boolean(document.querySelector(".consent-button, #target-tab"))', 'Webb panel');
+await panel.command('Runtime.enable');
+try { await waitFor(panel, 'Boolean(document.querySelector(".consent-button, .source-mode"))', 'Webb panel'); }
+catch (error) {
+  console.log(`Panel body: ${await panel.evaluate('document.body.innerText.slice(0,1200)').catch(() => '<unavailable>')}`);
+  console.log(`Panel exceptions: ${JSON.stringify(panel.events.filter(event => event.method === 'Runtime.exceptionThrown').map(event => event.params.exceptionDetails.text))}`);
+  throw error;
+}
 console.log(`Panel loaded: ${await panel.evaluate('document.title')}`);
 
 console.log(`Extension runtime: ${await panel.evaluate('chrome.runtime.id')}`);
@@ -95,12 +113,13 @@ if (process.env.WEBB_PROBE_TOKEN === '1') {
   console.log(`Browser token probe: ${JSON.stringify(status)}`);
   console.log(`Request origins: ${JSON.stringify(panel.events.filter(event => event.method === 'Network.requestWillBeSentExtraInfo').map(event => ({ origin: event.params.headers.origin || null, site: event.params.headers['sec-fetch-site'] || null, mode: event.params.headers['sec-fetch-mode'] || null })))}`);
   console.log(`Request header names: ${JSON.stringify(panel.events.filter(event => event.method === 'Network.requestWillBeSentExtraInfo').map(event => Object.keys(event.params.headers)))}`);
-  panel.close();
-  site.close();
+  await panel.close();
+  await site.close();
   process.exit(0);
 }
 
 await panel.evaluate('document.querySelector(".consent-button")?.click()');
+await panel.evaluate(`(() => { const button = Array.from(document.querySelectorAll('.source-mode button')).find(item => item.textContent.includes('Act on instructions')); if (button?.getAttribute('aria-pressed') !== 'true') button?.click(); })()`);
 await waitFor(panel, 'Boolean(document.querySelector("#target-tab:not(:disabled)"))', 'consented panel');
 await panel.evaluate(`chrome.storage.local.remove(['webbSkillbookV1', 'webbRecentRunV1', 'webbLastVideoV1'])`);
 const targetId = await panel.evaluate(`(async () => {
@@ -114,6 +133,62 @@ await panel.evaluate(`(() => {
   select.dispatchEvent(new Event('change', { bubbles: true }));
 })()`);
 await waitFor(panel, `document.querySelector('#target-tab')?.value === '${targetId}'`, 'target selection');
+if (process.env.WEBB_SHARE_TEST) {
+  const tutorial = await openPage(`https://webb-five-puce.vercel.app/demo/tutorial.html?qa=${runId}`);
+  await waitFor(tutorial, `Boolean(document.querySelector('#lesson-list button'))`, 'source page');
+  await tutorial.evaluate(`document.title = 'WebbSourceQA'`);
+  await waitFor(tutorial, `document.title === 'WebbSourceQA'`, 'unique source title');
+  const sourceId = await panel.evaluate(`(async () => (await chrome.tabs.query({})).find(tab => tab.url?.includes('tutorial.html?qa=${runId}'))?.id)()`);
+  if (!sourceId) throw new Error('Source tab was absent.');
+  await panel.evaluate(`chrome.tabs.update(${sourceId}, {active:true})`);
+  const modeLabel = process.env.WEBB_SHARE_TEST === 'notes' ? 'Capture notes' : 'Act on instructions';
+  await panel.evaluate(`(() => { const button = Array.from(document.querySelectorAll('.source-mode button')).find(item => item.textContent.includes(${JSON.stringify(modeLabel)})); if (button?.getAttribute('aria-pressed') !== 'true') button?.click(); })()`);
+  await waitFor(panel, `document.querySelector('.source-mode button[aria-pressed="true"]')?.textContent.includes(${JSON.stringify(modeLabel)})`, `${modeLabel} mode`);
+  const unhappy = process.env.WEBB_SHARE_TEST;
+  if (unhappy === 'cancel' || unhappy === 'noaudio') {
+    await panel.evaluate(unhappy === 'cancel'
+      ? `navigator.mediaDevices.getDisplayMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError'); }`
+      : `navigator.mediaDevices.getDisplayMedia = async () => new MediaStream()`);
+    await panel.evaluate(`document.querySelector('.follow-button').click()`);
+    await waitFor(panel, `document.body.innerText.includes('Tab audio was not shared') && !document.querySelector('.follow-button').disabled`, `${unhappy} recovery`);
+    if (await panel.evaluate(`Boolean(document.querySelector('.follow-button.following'))`)) throw new Error('Failed sharing was reported as connected.');
+    console.log(`Sharing ${unhappy} recovered with a clear retry instruction and no active capture.`);
+    await tutorial.close(); await panel.close(); await site.close(); process.exit(0);
+  }
+  await panel.evaluate(`document.querySelector('.follow-button').click()`);
+  try {
+    await waitFor(panel, `Boolean(document.querySelector('.follow-button.following'))`, 'shared tab audio', 20000);
+  } catch (error) {
+    console.log(`Sharing status: ${await panel.evaluate('document.body.innerText.slice(-1600)')}`);
+    throw error;
+  }
+  console.log('Source tab audio connected to AssemblyAI.');
+  const audio = (await readFile(process.env.WEBB_AUDIO_WAV)).toString('base64');
+  await tutorial.evaluate(`(() => { window.webbQaAudio = new Audio('data:audio/wav;base64,${audio}'); return window.webbQaAudio.play().then(() => true); })()`);
+  if (process.env.WEBB_SHARE_TEST === 'notes') {
+    await waitFor(panel, `document.querySelector('.source-notes-text')?.innerText.toLowerCase().includes('settings')`, 'captured source notes', 45000);
+    console.log(`Captured source note: ${await panel.evaluate(`document.querySelector('.source-notes-text')?.innerText`)}`);
+    if (await site.evaluate('location.hash') !== '') throw new Error('Notes mode performed a browser action.');
+  } else {
+    await waitFor(site, `location.hash === '#settings'`, 'spoken source action on target tab', 45000);
+    console.log('Spoken source instruction opened Settings in the target tab.');
+  }
+  await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+  await panel.command('Input.insertText', { text: 'What is playing?' });
+  await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  await waitFor(panel, `document.querySelector('.dock-status')?.innerText.includes('Listening to')`, 'source question answer');
+  console.log('Webb answered which source is playing.');
+  if (process.env.WEBB_SCREENSHOT_PATH) {
+    await panel.command('Emulation.setDeviceMetricsOverride', { width: 380, height: 900, deviceScaleFactor: 1, mobile: false });
+    const shot = await panel.command('Page.captureScreenshot');
+    await writeFile(process.env.WEBB_SCREENSHOT_PATH, Buffer.from(shot.data, 'base64'));
+  }
+  await panel.evaluate(`document.querySelector('.follow-button.following').click()`);
+  await tutorial.close();
+  await panel.close();
+  await site.close();
+  process.exit(0);
+}
 await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').focus()`);
 await panel.command('Input.insertText', { text: 'Open Settings' });
 console.log(`Typed command state: ${JSON.stringify(await panel.evaluate(`(() => ({
@@ -139,7 +214,7 @@ await waitFor(panel, `(async () => {
 console.log('Verified Settings action was stored as a reusable step.');
 
 await waitFor(panel, `Boolean(document.querySelector('input[aria-label="Name this skill"]'))`, 'skill save control');
-await panel.evaluate(`document.querySelector('input[aria-label="Name this skill"]').focus()`);
+await panel.evaluate(`document.querySelector('input[aria-label="Name this skill"]').select()`);
 await panel.command('Input.insertText', { text: 'Open Settings QA' });
 await panel.evaluate(`document.querySelector('.save-skill-row button').click()`);
 await waitFor(panel, `(async () => {
@@ -176,5 +251,5 @@ if (process.env.WEBB_VOICE_TEST === '1') {
   await panel.evaluate(`document.querySelector('button[aria-label="Stop microphone"]').click()`);
 }
 
-site.close();
-panel.close();
+await site.close();
+await panel.close();

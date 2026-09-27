@@ -116,8 +116,8 @@ export default defineContentScript({
 
     async function showVideoInvite() {
       if (invite || sessionStorage.getItem(dismissalKey)) return;
-      const state = await browser.storage.local.get(['webbActiveFollow', 'webbPendingFollow']);
-      if (state.webbActiveFollow || state.webbPendingFollow) return;
+      const state = await browser.storage.local.get('webbActiveFollow');
+      if (state.webbActiveFollow) return;
       invite = document.createElement('div');
       invite.setAttribute('data-webb-video-invite', '');
       const shadow = invite.attachShadow({ mode: 'closed' });
@@ -129,7 +129,7 @@ export default defineContentScript({
         p{margin:9px 0 13px;color:#526658;font-size:12px;line-height:1.45}
         .start{width:100%;min-height:38px;border:0;border-radius:9px;background:#286cf0;color:white;font-size:12px;font-weight:700;cursor:pointer}
         .start:hover{background:#1d59ca}.start:focus-visible,.close:focus-visible{outline:2px solid #286cf0;outline-offset:3px}
-      </style><aside class="card" aria-label="Webb video invitation"><div class="top"><span class="brand">webb<span class="dot">.</span> · VIDEO DETECTED</span><button class="close" aria-label="Dismiss Webb invitation">×</button></div><p>Following a tutorial? Webb can listen for steps and map them to another tab.</p><button class="start">Set up FOLLOW</button></aside>`;
+      </style><aside class="card" aria-label="Webb source invitation"><div class="top"><span class="brand">webb<span class="dot">.</span> · AUDIO SOURCE</span><button class="close" aria-label="Dismiss Webb invitation">×</button></div><p>Listen to this tab for instructions or capture notes in Webb.</p><button class="start">Open Webb</button></aside>`;
       shadow.querySelector<HTMLButtonElement>('.close')?.addEventListener('click', () => {
         sessionStorage.setItem(dismissalKey, '1');
         invite?.remove();
@@ -140,19 +140,12 @@ export default defineContentScript({
         button.disabled = true;
         button.textContent = 'Opening Webb...';
         try {
-          const response = await browser.runtime.sendMessage({ type: 'VIDEO_FOLLOW_INTENT', autoStart: button.dataset.autoStart === 'true' }) as { ok?: boolean; error?: string };
+          const response = await browser.runtime.sendMessage({ type: 'VIDEO_FOLLOW_INTENT' }) as { ok?: boolean; error?: string };
           if (!response?.ok) throw new Error(response?.error || 'Open Webb from the toolbar.');
           invite?.remove();
           invite = null;
         } catch {
           button.textContent = 'Open Webb from the toolbar';
-        }
-      });
-      void browser.storage.local.get(['privacyConsentVersion', 'webbAutoMode']).then(saved => {
-        const button = shadow.querySelector<HTMLButtonElement>('.start');
-        if (button && saved.privacyConsentVersion === '1' && saved.webbAutoMode === true) {
-          button.dataset.autoStart = 'true';
-          button.textContent = 'Open Webb to follow';
         }
       });
       document.documentElement.appendChild(invite);
