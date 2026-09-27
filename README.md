@@ -14,6 +14,10 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
+Download the [Webb 0.1.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.1.0/webb-0.1.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder.
+
+To build from source instead:
+
 ```powershell
 git clone https://github.com/agapemiteu/webb.git
 cd webb
@@ -21,7 +25,7 @@ npm install
 npm run build
 ```
 
-Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `.output/chrome-mv3`. Pin Webb to open its side panel. The extension connects to the hosted API by default.
+Then select `.output/chrome-mv3` in Chrome. Pin Webb to open its side panel. The extension connects to the hosted API by default.
 
 ## Use voice
 

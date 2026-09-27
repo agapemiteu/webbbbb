@@ -2,6 +2,10 @@
 
 ## Install the extension
 
+Download the [Webb 0.1.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.1.0/webb-0.1.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Pin Webb to open its side panel.
+
+To build from source instead:
+
 ```powershell
 git clone https://github.com/agapemiteu/webb.git
 cd webb
@@ -9,7 +13,7 @@ npm install
 npm run build
 ```
 
-In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3`. Pin Webb, then click its icon to open the right-side panel. Allow microphone access when you first start TALK.
+Select `.output/chrome-mv3` in Chrome. Pin Webb, then click its icon to open the right-side panel. Allow microphone access when you first start TALK.
 
 ## Run the guided demo
 
