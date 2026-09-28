@@ -2,7 +2,7 @@
 
 ## Install the extension
 
-Download the [Webb 0.4.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.0/webb-0.4.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
+Download the [Webb 0.4.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.1/webb-0.4.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
 
 To build from source instead:
 

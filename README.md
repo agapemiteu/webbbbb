@@ -14,7 +14,7 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
-Download the [Webb 0.4.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.0/webb-0.4.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
+Download the [Webb 0.4.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.1/webb-0.4.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
 
 To build from source instead:
 
@@ -41,7 +41,7 @@ Webb requires direct user approval for sending, submitting, deploying, and other
 
 ## Browser tasks
 
-- **Forms:** dictate values one field at a time, including a dropdown label and option. Webb prepares the form and waits before submitting.
+- **Forms:** say "Fill Email with demo@example.com" or "Change Company to Webb Demo". Dictate one field at a time, including a dropdown label and option. Webb verifies the field and waits before submitting. Duplicate or missing labels ask for clarification; read-only controls are rejected.
 - **Email:** on an open Gmail tab, say "Compose an email to your-address@example.com with subject Webb test and message Hello from Webb. Then send it." Webb opens Compose, fills the draft, and asks for approval. Review the recipient and message before saying "Go ahead". Changes to the draft invalidate that approval.
 - **Google Docs:** select an editable document and say "Append Webb document test passed to this document." Webb appends at the end and checks for newly observed text. If it cannot verify the result, check the document before repeating. Renaming and menu navigation use the page's visible controls.
 - **Webb pointer:** agent actions show a separate pointer. Say "Move right", "A little up", "Slower", "Stop", or "Click" to guide it. A pointer click on Send or Delete still requires approval. Dragging is not included.
@@ -51,6 +51,8 @@ Compound requests run at most eight verified steps, reinspecting after each one.
 Email preparation, approval binding, document input, forms, and pointer steering passed browser fixture checks. **Signed-in Google Docs editing and real Gmail sending are pending manual acceptance in the user's Chrome profile.** Fixtures do not prove those integrations.
 
 The signed-in Docs check exposed Chrome rejecting debugger attachment with a cross-extension access error. A supported Google Docs API route is now implemented with account authorization, document revision checks, and read-back verification. It needs Google OAuth configuration before live use. See [Google Docs setup](docs/GOOGLE_DOCS.md). Mocked API tests pass; live API authorization and writing are still pending.
+
+Settings > Your connections shows available account integrations. Customers authorize their own accounts without API keys. Forms on an open webpage do not need an account integration. Google Docs connection is marked unavailable until publisher configuration is complete. See [customer connections](docs/CONNECTIONS.md).
 
 ## Develop
 

@@ -611,6 +611,7 @@ export class SessionCoordinator {
     if (result && !result.ok) {
       this.failAction(action, result.error);
       this.log(`ACTION FAILED: ${result.error}`);
+      this.onReply(`Action stopped. ${result.error}`);
       return;
     }
     const recipientInput = action.type === 'fill' && new URL(before.url).hostname === 'mail.google.com'
@@ -633,6 +634,7 @@ export class SessionCoordinator {
     if (!verified) {
       this.failAction(action, 'Expected page change not observed');
       this.log(`ACTION NEEDS CHECK: ${description}`);
+      this.onReply('I could not verify the result. Check the page before repeating the request.');
       return;
     }
     const steps = this.view.procedure.steps.map(step => step.id === action.id ? { ...step, status: 'completed' as const } : step);

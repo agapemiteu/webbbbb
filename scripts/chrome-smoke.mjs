@@ -163,9 +163,26 @@ if (process.env.WEBB_FORM_TEST === '1') {
   }
   await fill('Fill Project name with Webb QA');
   await waitFor(site, `document.querySelector('#project-name').value === 'Webb QA'`, 'guided field fill');
+  await fill('Change Project name to Webb Corrected');
+  await waitFor(site, `document.querySelector('#project-name').value === 'Webb Corrected'`, 'guided correction');
   await fill('Select Deployment in What do you need help with');
   await waitFor(site, `document.querySelector('#request-type').value === 'Deployment'`, 'guided dropdown selection');
   if (await site.evaluate(`document.querySelector('#form-status').innerText`)) throw new Error('Form was submitted without approval.');
+  await site.evaluate(`document.querySelector('#project-name').readOnly = true`);
+  await fill('Fill Project name with Must not change');
+  await waitFor(panel, `document.body.innerText.includes('disabled or read-only')`, 'read-only rejection');
+  if (await site.evaluate(`document.querySelector('#project-name').value`) !== 'Webb Corrected') throw new Error('Read-only field changed.');
+  await site.evaluate(`document.querySelector('#project-name').readOnly = false`);
+  if (process.env.WEBB_FORM_VOICE_TEST === '1') {
+    await panel.evaluate(`document.querySelector('button[aria-label="Start microphone"]').click()`);
+    await waitFor(site, `/^blue river[.!]?$/i.test(document.querySelector('#project-name').value.trim())`, 'AssemblyAI spoken form correction', 45000);
+    await panel.evaluate(`document.querySelector('button[aria-label="Stop microphone"]').click()`);
+    console.log('Actual AssemblyAI transcription of a fake microphone clip corrected the form through the live Worker.');
+  }
+  await panel.evaluate(`document.querySelector('button[aria-label="Settings"]').click()`);
+  await waitFor(panel, `Boolean(document.querySelector('[aria-label="Your connections"]'))`, 'customer connections');
+  if (!await panel.evaluate(`document.querySelector('[aria-label="Your connections"]').innerText.includes('No connection needed')`)) throw new Error('Forms connection status missing.');
+  if (!await panel.evaluate(`[...document.querySelectorAll('[aria-label="Your connections"] button')].find(button => button.textContent.includes('Connect Google Docs'))?.disabled`)) throw new Error('Unconfigured Google integration was presented as available.');
   console.log('Guided text filling and native dropdown selection passed without submission.');
   await panel.close(); await site.close(); process.exit(0);
 }

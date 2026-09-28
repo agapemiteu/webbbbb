@@ -15,6 +15,8 @@ function visible(element: Element): boolean {
 }
 
 function label(element: Element): string {
+  const labelledBy = element.getAttribute('aria-labelledby')?.split(/\s+/).map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' ');
+  if (labelledBy) return labelledBy;
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
     return element.labels?.[0]?.textContent?.trim() || element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('name') || '';
   }
@@ -68,6 +70,9 @@ async function execute(request: PageRequest): Promise<PageResponse> {
     return { ok: false, error: 'Element changed. Inspect the page again.' };
   }
   if (request.type === 'POINT_AT') { await pointer.pointAt(element); return { ok: true, snapshot: snapshot(), detail: 'Webb is pointing at the target.' }; }
+  if (element.matches(':disabled, [aria-disabled="true"]') || request.type === 'FILL' && element.matches('[readonly], [aria-readonly="true"]')) {
+    return { ok: false, error: 'This control is disabled or read-only. Choose an editable control.' };
+  }
   if (!await pointer.pointAt(element)) return { ok: false, error: 'Action stopped before clicking.' };
   if (request.type === 'CLICK') {
     if (!(element instanceof HTMLElement)) return { ok: false, error: 'Element cannot be clicked.' };

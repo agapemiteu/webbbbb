@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { browser } from "wxt/browser";
 import { SessionCoordinator, type SessionView } from "../../src/session";
 import { pointerCommand } from '../../src/pointer-command';
-import { connectGoogleDocs, googleDocsConfigured } from '../../src/google-docs';
+import { disconnectGoogleDocs, googleDocsConfigured } from '../../src/google-docs';
+import { Connections } from './Connections';
 import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
 import { beginVideoRun, clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
@@ -531,6 +532,7 @@ function App() {
       cloudSessionDeleted = false;
     }
     await clearSkillbook();
+    await disconnectGoogleDocs();
     await browser.storage.local.remove(["privacyConsentVersion", "privacyConsentAt", "webbSessionId", "webbAutoMode", "webbFollowSuggestion", "webbActiveFollow", "webbPendingFollow", "webbFollowNotice", "webbSourceNotesV1", "webbFollowMode"]);
     consentedRef.current = false;
     setConsented(false);
@@ -606,9 +608,9 @@ function App() {
         {settingsOpen && (
           <section className="settings-panel" aria-label="Settings">
             <div className="section-heading">
-              <h2>Connection</h2>
-              <span>SETUP</span>
+              <h2>Settings</h2>
             </div>
+            <details><summary>Developer settings</summary>
             <label htmlFor="api">Worker URL</label>
             <input
               id="api"
@@ -616,18 +618,12 @@ function App() {
               onChange={(event) => setApiBase(event.target.value)}
               onBlur={() => void browser.storage.local.set({ apiBase })}
             />
-            <label className="auto-mode-row"><span><strong>Spoken replies</strong><small>Webb answers aloud. Your mic pauses during replies to prevent echoes.</small></span><input type="checkbox" checked={spokenReplies} onChange={event => { const enabled = event.target.checked; spokenRepliesRef.current = enabled; setSpokenReplies(enabled); if (!enabled) stopReply(); void browser.storage.local.set({ webbSpokenReplies: enabled }); }} /></label>
-            <p>Keep API keys on your Worker.</p>
-            <button className="text-button" disabled={!consented || !googleDocsConfigured()} onClick={() => void connectGoogleDocs().then(() => setMessage('Google Docs connected. Select your document and ask Webb to append text.')).catch(error => setMessage(error instanceof Error ? error.message : 'Google connection failed.'))}>Connect Google Docs</button>
-            {!googleDocsConfigured() && <p>Google Docs API access needs Google OAuth configuration for this build.</p>}
             <label htmlFor="extension-id">Extension ID</label>
-            <input
-              id="extension-id"
-              readOnly
-              value={browser.runtime.id}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-            <p>Use this ID when setting the Worker's allowed origin.</p>
+            <input id="extension-id" readOnly value={browser.runtime.id} onFocus={event => event.currentTarget.select()} />
+            <p>Keep API keys on the Worker.</p>
+            </details>
+            <label className="auto-mode-row"><span><strong>Spoken replies</strong><small>Webb answers aloud. Your mic pauses during replies to prevent echoes.</small></span><input type="checkbox" checked={spokenReplies} onChange={event => { const enabled = event.target.checked; spokenRepliesRef.current = enabled; setSpokenReplies(enabled); if (!enabled) stopReply(); void browser.storage.local.set({ webbSpokenReplies: enabled }); }} /></label>
+            <Connections consented={consented} notify={setMessage} />
             <button className="text-button" onClick={inspect} disabled={!target || !consented}>
               <Icon name="refresh" size={14} /> Inspect target page {snapshot ? `· ${snapshot.elements.length} controls found` : ""}
             </button>

@@ -1,5 +1,5 @@
 import { planEmailTask } from './email-agent.ts';
-import { planSelectOption } from './form-agent.ts';
+import { planFormField, planSelectOption } from './form-agent.ts';
 import { namedPageControl } from './page-agent.ts';
 
 type Source = 'user' | 'followed_tab';
@@ -293,6 +293,8 @@ async function handlePlan(request: Request, env: Env, origin: string): Promise<R
   }
   if (named?.reason) return json({ kind: 'question', reason: named.reason, confidence: 0, goal: input.procedure?.goal || '' }, 200, origin);
 
+  const field = planFormField(input);
+  if (field) return json(field, 200, origin);
   const selection = planSelectOption(input);
   if (selection) return json(selection, 200, origin);
   const email = planEmailTask(input);

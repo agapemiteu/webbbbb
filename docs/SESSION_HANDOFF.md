@@ -2,6 +2,18 @@
 
 Updated: 2026-09-28
 
+## Latest delivery: 0.4.1
+
+Customer connection groundwork is in `entrypoints/sidepanel/Connections.tsx`, with the contract documented in `docs/CONNECTIONS.md`. Forms on editable webpages do not require OAuth. Google Docs account authorization, status, disconnect, and a Google permissions link are implemented. The publisher still needs to configure its OAuth client; customers must not be asked to create clients or supply keys. No Google client ID is included in this release, so Docs is marked Coming soon. No live Google API authorization or write has been verified.
+
+Disconnect persists a disabled flag before clearing Chrome's cached tokens. The Docs adapter requires that flag to be enabled, preventing silent reauthorization after disconnect. Withdrawal of Webb consent also disables the connection. Google grant revocation remains a separate action in the customer's Google account.
+
+Exact named form filling and corrections use `planFormField`, preserving the dictated value and accepting only current labels/options. Missing labels, duplicates, and unavailable options ask for clarification. Compound tasks remain with Groq. Content execution rejects disabled/read-only controls and recognizes aria-labelledby. Action failures now reach the visible/spoken reply rather than leaving an earlier success message in the dock.
+
+Verification: nine root tests, 26 Worker tests, both TypeScript checks, extension build, diff checks, and artifact credential checks passed. In isolated Chromium on port 9243, the latest UI and live Worker passed text field fill/correction, native dropdown selection, read-only rejection with no mutation, and account-connection availability display. A Windows-generated fake microphone clip saying "Change project name to Blue River" reached actual AssemblyAI transcription and changed the form field through the live Worker. This is a synthetic microphone test, not a human microphone or Google account acceptance test. No form submission occurred. The first faster synthetic clip was misheard; a slower, clearer clip passed. Do not claim perfect speech recognition.
+
+Worker version: `1d05155a-4c30-4354-8829-9662d9b18466`. Site deployment: `dpl_AK6TM4QdMUiwXL5CdZCHq2VrvtFB`, same public alias. Local extension folder: `.output/chrome-mv3`. Release ZIP: `release/webb-0.4.1.zip`, SHA256 `3EF06B0476C05A6EFA055F20EFFD0ECF15D34706E686483B2004CB15C89E0352`. Historical 0.4.0 notes below describe earlier builds.
+
 ## Product
 
 Webb is a Chrome side-panel agent for the AssemblyAI Voice Agent Hackathon. Keep "Talk to the web" and "Make the web executable." TALK accepts direct user speech. FOLLOW listens to a source tab, which can contain a tutorial, lecture, meeting, or other video. Direct user instructions outrank source audio. Page content is context, never authority. Consequential actions require direct user confirmation.
