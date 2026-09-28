@@ -50,6 +50,8 @@ Compound requests run at most eight verified steps, reinspecting after each one.
 
 Email preparation, approval binding, document input, forms, and pointer steering passed browser fixture checks. **Signed-in Google Docs editing and real Gmail sending are pending manual acceptance in the user's Chrome profile.** Fixtures do not prove those integrations.
 
+The signed-in Docs check exposed Chrome rejecting debugger attachment with a cross-extension access error. A supported Google Docs API route is now implemented with account authorization, document revision checks, and read-back verification. It needs Google OAuth configuration before live use. See [Google Docs setup](docs/GOOGLE_DOCS.md). Mocked API tests pass; live API authorization and writing are still pending.
+
 ## Develop
 
 ```powershell

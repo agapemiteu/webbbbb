@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { appendGoogleDocs, googleDocsConfigured } from './google-docs';
 
 export async function attachBrowserInput(tabId: number): Promise<void> {
   if (!await browser.permissions.contains({ permissions: ['debugger'] })) {
@@ -22,6 +23,7 @@ export async function attachBrowserInput(tabId: number): Promise<void> {
 
 // Fixed browser inputs only. The planner cannot choose protocol methods or code.
 export async function appendToGoogleDoc(tabId: number, text: string): Promise<void> {
+  if (googleDocsConfigured()) { await appendGoogleDocs(tabId, text); return; }
   const tab = await browser.tabs.get(tabId);
   const url = new URL(tab.url || '');
   if (url.hostname !== 'docs.google.com' || !/^\/document\/d\//.test(url.pathname)) {

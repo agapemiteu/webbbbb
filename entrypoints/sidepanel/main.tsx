@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { browser } from "wxt/browser";
 import { SessionCoordinator, type SessionView } from "../../src/session";
 import { pointerCommand } from '../../src/pointer-command';
+import { connectGoogleDocs, googleDocsConfigured } from '../../src/google-docs';
 import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
 import { beginVideoRun, clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
@@ -617,6 +618,8 @@ function App() {
             />
             <label className="auto-mode-row"><span><strong>Spoken replies</strong><small>Webb answers aloud. Your mic pauses during replies to prevent echoes.</small></span><input type="checkbox" checked={spokenReplies} onChange={event => { const enabled = event.target.checked; spokenRepliesRef.current = enabled; setSpokenReplies(enabled); if (!enabled) stopReply(); void browser.storage.local.set({ webbSpokenReplies: enabled }); }} /></label>
             <p>Keep API keys on your Worker.</p>
+            <button className="text-button" disabled={!consented || !googleDocsConfigured()} onClick={() => void connectGoogleDocs().then(() => setMessage('Google Docs connected. Select your document and ask Webb to append text.')).catch(error => setMessage(error instanceof Error ? error.message : 'Google connection failed.'))}>Connect Google Docs</button>
+            {!googleDocsConfigured() && <p>Google Docs API access needs Google OAuth configuration for this build.</p>}
             <label htmlFor="extension-id">Extension ID</label>
             <input
               id="extension-id"
@@ -685,7 +688,7 @@ function App() {
               </select>
             </div>
           </div>
-          {tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">Ask Webb to append text or rename this document. Document input uses Chrome keyboard control and shows a temporary browser notice. Webb checks the inserted text and stops if it cannot verify it.</p>}
+          {tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">{googleDocsConfigured() ? 'Connect Google Docs in Settings, then ask Webb to append text to this document. Webb verifies the API update.' : 'Google Docs API access needs Google OAuth setup. Keyboard input may be blocked by Chrome in profiles with other extensions.'}</p>}
           <button
             className={`follow-button ${followed ? "following" : ""}`}
             onClick={followed ? stopFollow : followCurrentTab}
