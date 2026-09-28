@@ -567,6 +567,7 @@ export class SessionCoordinator {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Document input failed.';
         this.failAction(action, message);
+        this.log(`ACTION FAILED: ${message}`);
         this.onReply(message);
       }
       return;

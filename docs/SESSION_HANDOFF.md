@@ -10,6 +10,14 @@ Use one session coordinator with focused modules. Do not add AI credits or colla
 
 ## Current build: 0.4.0
 
+### Active investigation after the user's Google Docs check
+
+The user tested the signed-in Google Doc on 2026-09-28. Source transcription and page mapping worked, but debugger attachment failed before keyboard input. The old catch replaced every Chrome rejection with "Close DevTools", hiding the cause. Reading only Webb's installed extension settings confirmed its active debugger permission and installation at `.output/chrome-mv3`. Missing debugger permission is not the observed explanation. The exact rejection in the user's profile remains unknown.
+
+The local diagnostic build now checks permission, preserves the Chrome rejection, gives specific guidance for known rejection categories, logs the failure, and shows FAILED instead of IN PROGRESS. A simulated cross-extension rejection passed the isolated Chromium regression without changing document text. Root tests, TypeScript, and build passed. This diagnostic build is local; the published 0.4.0 ZIP and its hash below still refer to the earlier release. Do not claim signed-in document input is fixed.
+
+Pending user input: reload Webb in chrome://extensions, reload the blank Doc, request "Append Webb input test to this document", and supply the full message ending in "Chrome: ...". The asynchronous question is pending. Identify and verify that specific restriction before implementing another executor or publishing a compatibility claim. Playwright MCP is only evaluated, not integrated, and no local MCP helper is configured.
+
 The old FOLLOW setup tried `tabCapture` from a side-panel click, then silently waited for another toolbar click to obtain Chrome's permission. The user's screenshots repeatedly showed that waiting state. Version 0.3.0 removes that path and the offscreen document. FOLLOW now calls `getDisplayMedia` from Start listening. Chrome shows its native sharing dialog; the user selects the source under Chrome Tab and enables Share tab audio. Webb checks that the stream has audio before connecting to AssemblyAI. The panel must stay open during capture; switching website tabs is supported, closing the panel stops capture.
 
 FOLLOW has two explicit choices:

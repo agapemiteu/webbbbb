@@ -760,6 +760,10 @@ function App() {
               <span>
                 {current?.state === "verified"
                   ? "VERIFIED"
+                  : current?.state === "failed"
+                    ? "FAILED"
+                  : current?.state === "needs_you"
+                    ? "NEEDS YOU"
                   : view.busy
                     ? "WORKING"
                     : "IN PROGRESS"}

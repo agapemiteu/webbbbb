@@ -91,7 +91,18 @@ for (const target of await targets()) {
 }
 
 const runId = `webbqa${Date.now()}`;
-const site = await openPage(`https://webb-five-puce.vercel.app/demo/?qa=${runId}`);
+const practiceUrl = `https://webb-five-puce.vercel.app/demo/?qa=${runId}`;
+const site = await openPage(process.env.WEBB_DOCS_BLOCKED_TEST === '1' ? 'about:blank' : practiceUrl);
+if (process.env.WEBB_DOCS_BLOCKED_TEST === '1') {
+  site.socket.addEventListener('message', async event => {
+    const message = JSON.parse(event.data);
+    if (message.method === 'Fetch.requestPaused' && message.params.request.url === practiceUrl) {
+      await site.command('Fetch.fulfillRequest', { requestId: message.params.requestId, responseCode: 200, responseHeaders: [{name:'Content-Type',value:'text/html'}], body: Buffer.from('<!doctype html><title>Acme input failure fixture</title><p>Input failure fixture</p>').toString('base64') });
+    }
+  });
+  await site.command('Fetch.enable', { patterns: [{ urlPattern: practiceUrl }] });
+  await site.command('Page.navigate', { url: practiceUrl });
+}
 await waitFor(site, 'document.readyState === "complete" && document.title.includes("Acme")', 'practice site');
 console.log(`Practice site loaded: ${await site.evaluate('document.title')}`);
 
@@ -106,6 +117,11 @@ catch (error) {
 console.log(`Panel loaded: ${await panel.evaluate('document.title')}`);
 
 console.log(`Extension runtime: ${await panel.evaluate('chrome.runtime.id')}`);
+if (process.env.WEBB_DOCS_BLOCKED_TEST === '1') {
+  await panel.evaluate(`window.fetch = async (url) => new Response(JSON.stringify(String(url).endsWith('/plan')
+    ? { kind: 'instruction', confidence: 1, goal: 'Append document text', action: { id: 'blocked-input-qa', type: 'append', target: 'docs_body', risk: 'prepare', value: 'Webb document input checked.' } }
+    : { sessionId: 'local-input-failure-qa', revision: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } })`);
+}
 if (process.env.WEBB_PROBE_TOKEN === '1') {
   await panel.command('Network.enable');
   const status = await panel.evaluate(`(async () => {
@@ -219,9 +235,22 @@ if (process.env.WEBB_DOCS_TEST === '1') {
   await site.command('Fetch.enable', { patterns: [{ urlPattern: url }] });
   await site.command('Page.navigate', { url });
   await waitFor(site, `Boolean(document.querySelector('.kix-appview-editor'))`, 'intercepted editor fixture');
+  if (process.env.WEBB_DOCS_BLOCKED_TEST === '1') {
+    await panel.evaluate(`(() => {
+      window.webbAttachForTest = chrome.debugger.attach.bind(chrome.debugger);
+      chrome.debugger.attach = async () => { throw new Error('Cannot access a chrome-extension:// URL of different extension'); };
+    })()`);
+  }
   await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
   await panel.command('Input.insertText', { text: 'Append Webb document input checked. to the end of this Google Docs document.' });
   await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  if (process.env.WEBB_DOCS_BLOCKED_TEST === '1') {
+    await waitFor(panel, `document.body.innerText.includes('Chrome reports a conflict with another extension')`, 'specific Chrome rejection');
+    await waitFor(panel, `document.querySelector('[aria-label="Current action"] .section-heading')?.innerText.includes('FAILED')`, 'failed action heading');
+    if (await site.evaluate(`document.querySelector('.kix-lineview-text-block').textContent`) !== 'Previously saved paragraph.') throw new Error('Blocked attachment changed document text.');
+    console.log('Blocked browser input preserved the Chrome error, showed FAILED, and left document text untouched.');
+    await panel.close(); await site.close(); process.exit(0);
+  }
   try {
     await waitFor(panel, `document.body.innerText.includes('Done. Append text to')`, 'verified document append', 30000);
   } catch (error) { console.log(await panel.evaluate('document.body.innerText')); throw error; }

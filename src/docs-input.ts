@@ -1,5 +1,25 @@
 import { browser } from 'wxt/browser';
 
+export async function attachBrowserInput(tabId: number): Promise<void> {
+  if (!await browser.permissions.contains({ permissions: ['debugger'] })) {
+    throw new Error('Browser input permission is missing. Reload Webb in chrome://extensions and accept its updated permissions. No keyboard input was sent.');
+  }
+  try { await browser.debugger.attach({ tabId }, '1.3'); }
+  catch (error) {
+    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+    const recovery = /another debugger|already attached/i.test(detail)
+      ? 'Close DevTools or disconnect the other browser automation tool from this tab.'
+      : /chrome-extension:\/\/|different extension/i.test(detail)
+        ? 'Chrome reports a conflict with another extension. Try this page in a Chrome profile with only Webb enabled.'
+        : /canceled|cancelled|denied by user/i.test(detail)
+          ? 'Chrome cancelled browser input. Approve the browser notice when retrying.'
+          : /policy|administrator/i.test(detail)
+            ? 'This Chrome profile has a policy blocking browser input.'
+            : 'Browser input was blocked. Share this Chrome error so we can identify the restriction.';
+    throw new Error(`${recovery} No keyboard input was sent. Chrome: ${detail}`);
+  }
+}
+
 // Fixed browser inputs only. The planner cannot choose protocol methods or code.
 export async function appendToGoogleDoc(tabId: number, text: string): Promise<void> {
   const tab = await browser.tabs.get(tabId);
@@ -10,9 +30,7 @@ export async function appendToGoogleDoc(tabId: number, text: string): Promise<vo
   if (!text.trim() || text.length > 4000) throw new Error('Document text must be between 1 and 4,000 characters.');
   const target = { tabId };
   let inserted = false;
-  await browser.debugger.attach(target, '1.3').catch(() => {
-    throw new Error('Chrome could not enable document input. Close DevTools on this tab and try again.');
-  });
+  await attachBrowserInput(tabId);
   try {
     const readText = async () => {
       const dom = await browser.scripting.executeScript({ target: { tabId }, func: () => {
