@@ -11,6 +11,10 @@ class DevTools {
     this.nextId = 0;
     this.pending = new Map();
     this.events = [];
+    socket.onclose = () => {
+      for (const { reject } of this.pending.values()) reject(new Error('Test page connection closed.'));
+      this.pending.clear();
+    };
     socket.onmessage = event => {
       const message = JSON.parse(event.data);
       if (message.method) this.events.push(message);
@@ -133,6 +137,99 @@ await panel.evaluate(`(() => {
   select.dispatchEvent(new Event('change', { bubbles: true }));
 })()`);
 await waitFor(panel, `document.querySelector('#target-tab')?.value === '${targetId}'`, 'target selection');
+if (process.env.WEBB_FORM_TEST === '1') {
+  await site.command('Page.navigate', { url: `https://webb-five-puce.vercel.app/demo/form.html?qa=${runId}` });
+  await waitFor(site, `Boolean(document.querySelector('#request-type'))`, 'support form');
+  async function fill(text) {
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  }
+  await fill('Fill Project name with Webb QA');
+  await waitFor(site, `document.querySelector('#project-name').value === 'Webb QA'`, 'guided field fill');
+  await fill('Select Deployment in What do you need help with');
+  await waitFor(site, `document.querySelector('#request-type').value === 'Deployment'`, 'guided dropdown selection');
+  if (await site.evaluate(`document.querySelector('#form-status').innerText`)) throw new Error('Form was submitted without approval.');
+  console.log('Guided text filling and native dropdown selection passed without submission.');
+  await panel.close(); await site.close(); process.exit(0);
+}
+if (process.env.WEBB_POINTER_TEST === '1') {
+  async function steer(text) {
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  }
+  await steer('Move right');
+  await waitFor(site, `Boolean(document.querySelector('[data-webb-pointer]'))`, 'visible Webb cursor');
+  const initial = await site.evaluate(`document.querySelector('[data-webb-pointer]').getBoundingClientRect().left`);
+  await waitFor(site, `document.querySelector('[data-webb-pointer]').getBoundingClientRect().left > ${initial + 20}`, 'gradual pointer movement');
+  await steer('Stop');
+  await waitFor(panel, `document.querySelector('.dock-status')?.innerText.includes('pointer ready')`, 'pointer stopped');
+  const stopped = await site.evaluate(`document.querySelector('[data-webb-pointer]').getBoundingClientRect().left`);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  if (await site.evaluate(`document.querySelector('[data-webb-pointer]').getBoundingClientRect().left`) !== stopped) throw new Error('Pointer kept moving after Stop.');
+  await site.evaluate(`(() => { const rect = document.querySelector('[data-webb-pointer]').getBoundingClientRect(); const button = document.createElement('button'); button.textContent = 'Delete record'; button.style.cssText = 'position:fixed;z-index:1000;width:120px;height:50px'; button.style.left = (rect.left - 20) + 'px'; button.style.top = (rect.top - 10) + 'px'; button.onclick = () => { button.textContent = 'Record removed'; }; document.body.appendChild(button); })()`);
+  await steer('Click');
+  await waitFor(panel, `Boolean(document.querySelector('[aria-label="Confirmation required"]'))`, 'pointer click approval');
+  if (await site.evaluate(`document.body.innerText.includes('Record removed')`)) throw new Error('Pointer bypassed destructive approval.');
+  await steer('Go ahead');
+  await waitFor(site, `document.body.innerText.includes('Record removed')`, 'approved pointer click');
+  console.log('Webb cursor moved gradually, stopped, and required approval for a destructive pointer click. Physical mouse movement was not used.');
+  await panel.close(); await site.close(); process.exit(0);
+}
+if (process.env.WEBB_TASK_TEST === '1') {
+  await site.evaluate(`(() => {
+    document.title = 'Mail execution fixture';
+    document.body.innerHTML = '<button id="compose">Compose</button><div id="draft"></div><p id="sent"></p>';
+    document.querySelector('#compose').onclick = () => {
+      document.querySelector('#draft').innerHTML = '<label>To<input id="to" type="email"></label><label>Subject<input id="subject"></label><div role="textbox" contenteditable="true" aria-label="Message body" id="body" style="min-height:60px"></div><button id="send">Send</button>';
+      document.querySelector('#send').onclick = () => { document.querySelector('#sent').textContent = 'Practice message sent'; document.querySelector('#draft').innerHTML = ''; };
+    };
+  })()`);
+  async function command(text) {
+    await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+    await panel.command('Input.insertText', { text });
+    await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  }
+  await command('Compose an email to qa@example.com with subject Webb review and message Please review the release. Then send it.');
+  try { await waitFor(panel, `Boolean(document.querySelector('[aria-label="Confirmation required"]'))`, 'email approval', 60000); } catch (error) { console.log(await panel.evaluate('document.body.innerText')); throw error; }
+  const draft = await site.evaluate(`({ to: document.querySelector('#to')?.value, subject: document.querySelector('#subject')?.value, body: document.querySelector('#body')?.textContent, sent: document.querySelector('#sent')?.textContent })`);
+  if (draft.to !== 'qa@example.com' || draft.subject !== 'Webb review' || !draft.body?.includes('Please review the release') || draft.sent) throw new Error('Compound email task did not prepare the expected draft: ' + JSON.stringify(draft));
+  console.log('One request opened Compose and filled recipient, subject, and editable body, then waited for approval.');
+  await site.evaluate(`document.querySelector('#subject').value = 'Changed after approval request'`);
+  await command('Go ahead');
+  await waitFor(panel, `document.body.innerText.includes('The draft changed')`, 'changed draft approval rejection');
+  if (await site.evaluate(`document.querySelector('#sent').textContent`)) throw new Error('A changed draft was sent.');
+  console.log('Changed draft invalidated the pending approval. Nothing was sent.');
+  await command('Send this email.');
+  await waitFor(panel, `Boolean(document.querySelector('[aria-label="Confirmation required"]'))`, 'fresh approval');
+  await command('Go ahead');
+  await waitFor(site, `document.querySelector('#sent').textContent === 'Practice message sent'`, 'approved practice send');
+  console.log('Fresh direct approval completed the practice send. No real email was sent by this test.');
+  await panel.close(); await site.close(); process.exit(0);
+}
+if (process.env.WEBB_DOCS_TEST === '1') {
+  const url = 'https://docs.google.com/document/d/webb-input-qa/edit';
+  const fixture = '<!doctype html><title>Document input fixture</title><div class="kix-appview-editor" style="width:600px;height:400px"><div class="kix-lineview-text-block" role="textbox" aria-label="Document body" contenteditable="true" style="width:600px;height:400px">Previously saved paragraph.</div></div>';
+  const handler = async event => {
+    const message = JSON.parse(event.data);
+    if (message.method === 'Fetch.requestPaused') await site.command('Fetch.fulfillRequest', { requestId: message.params.requestId, responseCode: 200, responseHeaders: [{name:'Content-Type',value:'text/html'}], body: Buffer.from(fixture).toString('base64') });
+  };
+  site.socket.addEventListener('message', handler);
+  await site.command('Fetch.enable', { patterns: [{ urlPattern: url }] });
+  await site.command('Page.navigate', { url });
+  await waitFor(site, `Boolean(document.querySelector('.kix-appview-editor'))`, 'intercepted editor fixture');
+  await panel.evaluate(`document.querySelector('input[aria-label="Type a direct instruction"]').select()`);
+  await panel.command('Input.insertText', { text: 'Append Webb document input checked. to the end of this Google Docs document.' });
+  await panel.evaluate(`document.querySelector('button[aria-label="Send instruction"]').click()`);
+  try {
+    await waitFor(panel, `document.body.innerText.includes('Done. Append text to')`, 'verified document append', 30000);
+  } catch (error) { console.log(await panel.evaluate('document.body.innerText')); throw error; }
+  const content = await site.evaluate(`document.querySelector('.kix-lineview-text-block').textContent`);
+  if (!content.includes('Previously saved paragraph.') || !content.includes('Webb document input checked.')) throw new Error('Document append replaced or lost text.');
+  console.log('Trusted document input appended and verified text without replacing existing content. This fixture does not prove signed-in Google Docs compatibility.');
+  await panel.close(); await site.close(); process.exit(0);
+}
 if (process.env.WEBB_SHARE_TEST) {
   const tutorial = await openPage(`https://webb-five-puce.vercel.app/demo/tutorial.html?qa=${runId}`);
   await waitFor(tutorial, `Boolean(document.querySelector('#lesson-list button'))`, 'source page');

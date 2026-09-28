@@ -8,14 +8,14 @@ Webb is a Chrome side-panel agent for the AssemblyAI Voice Agent Hackathon. Keep
 
 Use one session coordinator with focused modules. Do not add AI credits or collaborator references. Do not fork Aalto. Avoid em dashes.
 
-## Current build: 0.3.1
+## Current build: 0.4.0
 
 The old FOLLOW setup tried `tabCapture` from a side-panel click, then silently waited for another toolbar click to obtain Chrome's permission. The user's screenshots repeatedly showed that waiting state. Version 0.3.0 removes that path and the offscreen document. FOLLOW now calls `getDisplayMedia` from Start listening. Chrome shows its native sharing dialog; the user selects the source under Chrome Tab and enables Share tab audio. Webb checks that the stream has audio before connecting to AssemblyAI. The panel must stay open during capture; switching website tabs is supported, closing the panel stops capture.
 
 FOLLOW has two explicit choices:
 
 - Act on instructions: classify source speech, map immediate instructions to the separate target page, execute, and verify.
-- Listen and assist (default): collect source transcripts, keep up to 8,000 characters of recent speech as context, and act only on direct user requests. The user can ask about the source or ask for a draft in a supported web field. Copy transcript exports captured speech. Direct Google Docs document-body editing is not implemented. The panel explains this when Docs is selected as an action target.
+- Listen and assist (default): collect source transcripts, keep up to 8,000 characters of recent speech as context, and act only on direct user requests. The user can ask about the source or ask for a draft in a supported web field. Copy transcript exports captured speech. Google Docs has an append input adapter using fixed Chrome keyboard events and local text verification. Signed-in compatibility remains pending; do not claim it has passed Google acceptance.
 
 The UI uses source terminology. It displays Connected and heard speech, prevents duplicate capture starts, and reports cancelled sharing or missing audio. It answers "What is playing?" with the connected source name. Listen and assist hides empty action progress. Notes persist in Chrome local storage and are cleared when consent is withdrawn.
 
@@ -23,18 +23,32 @@ Transcriber startup waits for AssemblyAI's Begin message, with token and connect
 
 Spoken replies use Chrome's native tts API (permission tts). Chrome speech playback reached a real end event in isolated Chromium. The mic sends silent frames during replies to prevent echo feedback; Stop speaking and listen to me returns control immediately. Spoken replies can be disabled in Settings. Full duplex voice interruption during Webb's own reply is not implemented. Replies remain visible when an installed voice is unavailable. Source context is held in the current panel session; saved transcript export is not automatic long-term agent memory.
 
+## Browser capabilities in 0.4.0
+
+The coordinator now runs up to eight verified steps for a direct request and reinspects before each plan. Native select options are included in context; a deterministic form module maps explicitly named options, stops on ambiguous matches, and does not treat source explanations as user commands. Fully dictated email details use a dedicated mail module to open Compose, fill recipient/subject/body, then request approval. More general requests use Groq. Draft values, recipient chips, and attachment labels bind pending approval; changing them invalidates approval. Existing field values are excluded from model page context; only filled/empty booleans are sent. Dictated task progress can include the values the user requested. Draft previews remain local.
+
+Google Docs append and Gmail recipient commitment use fixed debugger input commands; the model cannot choose methods or code. Chrome shows a temporary debugger notice and the adapter detaches after input. If document input is attempted but not verified, Webb stops and tells the user to inspect before repeating. Do not automatically retry text input. Docs verification reads only editor text and document-body accessibility values, not an unrelated search or title field.
+
+The content script shows a Webb cursor for mapped actions. Direct commands include Move right, A little up, Slower, Faster, Stop, and Click. Movement stops at the viewport edge or after ten seconds. A pointer click goes through the confirmation guard. Dragging is not implemented. Direct steering activates the selected target tab. Automatic targeting skips animations in hidden tabs, because Chrome suspends their animation frames. Stop can interrupt an in-progress pointer preview before a click.
+
+New modules: src/docs-input.ts, src/mail-input.ts, src/page-pointer.ts, src/pointer-command.ts, workers/api/src/email-agent.ts, workers/api/src/form-agent.ts, workers/api/src/page-agent.ts. Named navigation and saved steps use a unique visible label before falling back to Groq for semantic matching. Multiple matches ask for clarification. No independent LLM agent fleet.
+
+Browser tests passed compound email preparation, changed-draft approval rejection, approved practice send, document append preserving existing text in an intercepted editor fixture, guided form fields/dropdowns, pointer motion/stop/guard, source contextual answers and source-based drafting, mic transcription, and skill save/replay. **No real Gmail message was sent by the automated tests. Signed-in Gmail and Docs remain pending manual checks.**
+
+Groq output is bounded to 800 tokens with low reasoning effort. A 429 returns a wait interval; the coordinator retries planning once without repeating an already executed action. Other planner failures stop the task. The displayed procedure is bounded to the latest 30 steps.
+
 ## Live services
 
 - Site: https://webb-five-puce.vercel.app/
 - Practice pages: https://webb-five-puce.vercel.app/demo/
 - Worker: https://webb-api.collins-coordinator-worker.workers.dev
 - Repository: https://github.com/agapemiteu/webb
-- Extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.3.1/webb-0.3.1.zip
+- Extension ZIP: https://github.com/agapemiteu/webb/releases/download/v0.4.0/webb-0.4.0.zip
 - Chrome Web Store publication is deferred. Install the ZIP with Developer mode and Load unpacked.
 
 AssemblyAI and Groq secrets are configured on the Worker. Local development keys are in ignored `workers/api/.dev.vars`. Never print or commit those values or embed them in the extension.
 
-The Worker deployment version is `cc5fc489-a86e-4fe9-9edb-11852357c5f2`. The site's production alias was updated on 2026-09-28. The 0.3.1 ZIP SHA-256 is `9f07150f2761ba928f1305b65d6dfe3b9da1162317b843844911fca55b5804de`. Configured API keys were scanned against the compiled extension; neither was present.
+The Worker deployment version is `484ace89-ccfd-4d72-b111-6f72d224b8a7`. The site's production alias was updated on 2026-09-28 (deployment `dpl_5Q8jttdqaSBSQkSMqXjLEW1hevSJ`). Extension ZIP SHA256: `A88D568672A9C6D31008E719786A78CD386FB970443E925644B56489495BC2F6`.
 
 ## Structure
 
@@ -50,17 +64,17 @@ The Worker deployment version is `cc5fc489-a86e-4fe9-9edb-11852357c5f2`. The sit
 - Unpacked extension source-tab playback reached real AssemblyAI transcription in isolated Chromium. The test used a WAV played by the source page and Chrome's actual tab-sharing stream, with no fake microphone device.
 - The same spoken source instruction opened Settings on a separate Acme Cloud target through the live Groq planner.
 - Listen and assist captured source speech without changing the target page. Webb answered a source-context question through live Groq, then obeyed a polite direct request to open Settings while the source stayed connected. A further request drafted the source content into a support form field without submitting.
-- TALK with a fake microphone clip reached real AssemblyAI and Groq and opened Settings. A verified action was saved as a skill and replayed against a reset page.
+- TALK with a fake microphone clip reached real AssemblyAI and opened Settings through the named page matcher. A verified action was saved as a skill and replayed against a reset page. Earlier model-only routing sometimes asked for an element ID despite receiving the page controls; the named matcher fixes that path.
 - Cancelled sharing and missing audio were simulated in Chromium. Both recovered with retry instructions and no active capture.
 - The panel was inspected at 380px width.
-- Root TypeScript check, four root tests, Worker TypeScript check, and 16 Worker tests passed.
+- Root TypeScript check, five root tests, Worker TypeScript check, and 23 Worker tests passed. The final 0.4.0 bundle passed source audio/context/TTS, microphone/skills, compound mail approval, document fixture, form dropdown, and pointer checks in an isolated Chromium profile on port 9239.
 
 The automated source checks use Chromium's `--auto-select-tab-capture-source-by-title=WebbSourceQA` flag to approve the native picker in an isolated test profile. This is test automation only; installed Webb still requires the user's sharing approval.
 
 ## Limits and remaining acceptance checks
 
 - Check the native Chrome sharing dialog and actual YouTube playback in the user's profile before recording the final demo. Start the video after Connected appears.
-- Google Docs receives captured notes by copy and paste. Do not claim automatic document-body editing.
+- Run the signed-in Docs append check before claiming Google Docs compatibility. The user agreed to test a blank document but has not run it yet. Fixture checks only prove trusted input and text verification mechanics.
 - Gmail send behavior requires a signed-in test account and manual review. Only confirm sending to an address the user controls.
 - Workroom is a practice page, not Microsoft Teams. Practice forms and deployments do not reach external services.
 - Skills store verified control labels and roles, not prior field values. Replay maps against the current page, asks for new values, and stops on uncertain or missing controls. Consequential actions still require direct confirmation.

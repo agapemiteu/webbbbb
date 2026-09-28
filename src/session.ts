@@ -1,4 +1,7 @@
 import { browser } from 'wxt/browser';
+import { appendToGoogleDoc } from './docs-input';
+import { commitGmailRecipient } from './mail-input';
+import type { PointerCommand } from './pointer-command';
 import type { BrowserAction, PageRequest, PageResponse, PageSnapshot, ProcedureState, TranscriptTurn } from './protocol';
 import { beginManualRun, beginVideoRun, rememberVerifiedStep } from './skillbook';
 import { stepFromVerifiedAction, stepInstruction, type SkillSource, type WebbSkill } from './skill-model';
@@ -8,6 +11,7 @@ type Plan = {
   reason: string;
   confidence: number;
   goal: string;
+  continueTask?: boolean;
   action?: BrowserAction;
 };
 
@@ -34,7 +38,7 @@ function isExplicitConfirmation(text: string, description: string): boolean {
 
 export type SessionView = {
   procedure: ProcedureState;
-  pending: { action: BrowserAction; description: string; requestedAt: number } | null;
+  pending: { action: BrowserAction; description: string; requestedAt: number; preview?: string } | null;
   events: string[];
   busy: boolean;
   current?: { heard: string; matched: string; source: TranscriptTurn['source']; state: 'mapping' | 'needs_you' | 'acting' | 'verified' | 'failed' };
@@ -50,12 +54,15 @@ export class SessionCoordinator {
   private sessionId: string | null = null;
   private revision = 0;
   private syncQueue: Promise<void> = Promise.resolve();
+  private task: { turn: TranscriptTurn; progress: string[]; continueTask: boolean } | null = null;
+  private confirmationPage: { tabId: number; fields: string } | null = null;
   private sourceContext: { title: string; transcript: string } | undefined;
   private activeSkill: { skill: WebbSkill; index: number } | null = null;
 
   constructor(private readonly apiBase: () => string, private readonly targetTab: () => number | null, private readonly onChange: (view: SessionView) => void, private readonly onReply: (text: string) => void = () => {}) {}
 
   private update(patch: Partial<SessionView>) {
+    if (patch.procedure) patch.procedure = { ...patch.procedure, steps: patch.procedure.steps.slice(-30) };
     this.view = { ...this.view, ...patch };
     this.onChange(this.view);
   }
@@ -70,6 +77,27 @@ export class SessionCoordinator {
   }
 
   resetSource() { this.sourceContext = undefined; }
+
+  private fieldsFingerprint(page: PageSnapshot) {
+    return JSON.stringify({ url: page.url, recipients: page.draftRecipients, attachments: page.elements.filter(element => /attachment/i.test(element.text)).map(element => [element.id, element.text]), fields: page.elements.filter(element => element.value !== undefined).map(element => [element.id, element.value]) });
+  }
+
+  private async continueTask(action: BrowserAction, description: string, generation: number) {
+    if (generation !== this.generation || !this.task) return;
+    if (!this.view.procedure.steps.some(step => step.id === action.id && step.status === 'completed')) { this.task = null; return; }
+    this.task.progress.push(`${description}${action.value !== undefined ? `: ${action.value}` : ''}`);
+    if (!this.task.continueTask) { this.task = null; return; }
+    if (this.task.progress.length >= 8) {
+      this.task = null;
+      this.onReply('Eight steps completed. Review the page and tell me what to do next.');
+      return;
+    }
+    await this.process(this.task.turn, generation);
+  }
+
+  private verifiedReply(description: string) {
+    if (!this.task?.continueTask) this.onReply(`Done. ${description}.`);
+  }
 
   private async ensureSession() {
     if (this.sessionId) return;
@@ -114,6 +142,8 @@ export class SessionCoordinator {
   async clearSession() {
     this.generation++;
     this.resetSource();
+    this.task = null;
+    this.confirmationPage = null;
     this.activeSkill = null;
     this.clearGate();
     await this.syncQueue;
@@ -169,6 +199,7 @@ export class SessionCoordinator {
     if (!skill.steps.length) throw new Error('This skill has no verified steps.');
     this.generation++;
     this.clearGate();
+    this.task = null;
     this.activeSkill = { skill, index: 0 };
     this.update({ skill: { name: skill.name, index: 0, total: skill.steps.length, status: 'running' } });
     this.log(`RUNNING SKILL: ${skill.name}`);
@@ -229,6 +260,35 @@ export class SessionCoordinator {
     this.log(`SKILL PAUSED: ${reason}`);
   }
 
+  async drivePointer(command: PointerCommand) {
+    const tab = this.targetTab();
+    if (!tab) throw new Error('Choose the website where Webb should move.');
+    if (command.kind === 'stop') this.cancel();
+    else await browser.tabs.update(tab, { active: true });
+    await this.inspect();
+    const result = await browser.tabs.sendMessage(tab, { type: 'POINTER', command } satisfies PageRequest) as PageResponse;
+    if (!result.ok) throw new Error(result.error);
+    if (command.kind !== 'click') return result.detail;
+    this.generation++;
+    this.task = null;
+    if (this.view.pending) this.cancel();
+    const target = result.snapshot.elements.find(element => element.id === result.pointerTarget);
+    if (!target) throw new Error('No visible control is under Webb. Move onto a button, link, or field.');
+    const safe = target.role === 'link' || ['textbox', 'combobox', 'tab', 'menuitem'].includes(target.role)
+      || /^(settings|connections|integrations|overview|menu|compose)$/i.test(target.text.trim());
+    const risky = /\b(send|submit|delete|remove|publish|deploy|save|create|pay|purchase|confirm|revoke)\b/i.test(target.text);
+    const action: BrowserAction = { id: crypto.randomUUID(), type: 'click', target: target.id, targetText: target.text, risk: safe && !risky ? 'auto' : 'confirm' };
+    const description = `Click ${target.text || 'this control'}`;
+    this.update({ procedure: { ...this.view.procedure, steps: [...this.view.procedure.steps, { id: action.id, instruction: description, status: 'current' }] }, current: { heard: 'Click here', matched: target.text, source: 'user', state: action.risk === 'confirm' ? 'needs_you' : 'mapping' } });
+    if (action.risk === 'confirm') {
+      this.confirmationPage = { tabId: tab, fields: this.fieldsFingerprint(result.snapshot) };
+      this.update({ pending: { action, description, requestedAt: Date.now() } });
+      this.waitForUser();
+      this.onReply(`${description}. Say go ahead to approve, or cancel.`);
+    } else await this.execute(action, false, description);
+    return description;
+  }
+
   receive(turn: TranscriptTurn) {
     if (!turn.final) return;
     if (turn.source === 'followed_tab' && this.activeSkill) return;
@@ -244,6 +304,9 @@ export class SessionCoordinator {
     this.log(`${turn.source === 'user' ? 'YOU' : 'SOURCE'}: ${turn.text}`);
     this.persist({ [turn.source === 'user' ? 'latestUserTurn' : 'latestTutorialTurn']: turn, status: 'planning' });
     if (turn.source === 'user') {
+      if (!this.view.pending || !isExplicitConfirmation(turn.text, this.view.pending.description)) {
+        this.task = this.activeSkill ? null : { turn, progress: [], continueTask: false };
+      }
       this.generation++;
       void this.process(turn, this.generation);
     } else {
@@ -275,6 +338,7 @@ export class SessionCoordinator {
         this.persist({ pendingConfirmation: null, status: 'acting' });
         this.clearGate();
         await this.execute(pending.action, true, `Confirmed by you: ${pending.description}`);
+        await this.continueTask(pending.action, pending.description, generation);
         return;
       }
       if (/\b(no|stop|don't|cancel|wait)\b/i.test(text)) {
@@ -296,15 +360,24 @@ export class SessionCoordinator {
       const context: PageSnapshot = {
         url: page.url,
         title: page.title,
-        elements: page.elements.map(({ id, role, text, tag }) => ({ id, role, text, tag })),
+        elements: page.elements.map(({ id, role, text, tag, options, value }) => ({ id, role, text, tag, ...(options ? { options } : {}), ...(value !== undefined ? { filled: !!value.trim() } : {}) })),
       };
       this.persist({ pageContext: context });
-      const response = await fetch(`${this.apiBase().replace(/\/$/, '')}/plan`, {
+      const planRequest = () => fetch(`${this.apiBase().replace(/\/$/, '')}/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: turn.source, text, page: context, procedure: this.view.procedure, ...(turn.source === 'user' ? { sourceContext: this.sourceContext } : {}) }),
+        body: JSON.stringify({ source: turn.source, text, page: context, procedure: this.view.procedure, ...(turn.source === 'user' ? { sourceContext: this.sourceContext, taskProgress: this.task?.progress || [] } : {}) }),
       });
-      if (!response.ok) throw new Error(`Planner unavailable (${response.status})`);
+      let response = await planRequest();
+      if (response.status === 429) {
+        const error = await response.json() as { retryAfter?: number };
+        const seconds = Math.min(30, Math.max(1, error.retryAfter || 5));
+        this.log(`Planner is busy. Retrying the next step in ${seconds} seconds.`);
+        await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+        if (generation !== this.generation) return;
+        response = await planRequest();
+      }
+      if (!response.ok) throw new Error(response.status === 429 ? 'Planner is still busy. Your verified steps are preserved. Tell me the next step when ready.' : `Planner unavailable (${response.status})`);
       const plan = await response.json() as Plan;
       if (generation !== this.generation) return;
       if (plan.goal && !this.view.procedure.goal) {
@@ -319,6 +392,7 @@ export class SessionCoordinator {
       }
       if (!this.targetTab()) { this.onReply('Choose a target website for this action.'); return; }
       const action = plan.action;
+      if (turn.source === 'user' && this.task) this.task.continueTask = plan.continueTask === true;
       const expectedSkillStep = this.activeSkill?.skill.steps[this.activeSkill.index];
       if (expectedSkillStep && action.type !== expectedSkillStep.type) {
         this.failSkill('The page proposed a different action.');
@@ -339,26 +413,30 @@ export class SessionCoordinator {
         this.update({ procedure: { ...this.view.procedure, steps } });
         this.persist({ procedure: this.view.procedure });
         await this.execute(action, false, description);
+        await this.continueTask(action, description, generation);
         return;
       }
       const target = page.elements.find(element => element.id === action.target);
-      if (!target || plan.confidence < 0.75 || !['click', 'fill'].includes(action.type)) {
+      if (!target || plan.confidence < 0.75 || !['click', 'fill', 'append'].includes(action.type)) {
         this.log('No reliable target found. Action paused.');
         this.failSkill('No reliable page match was found.');
         this.waitForUser();
         return;
       }
       const needsConfirmation = action.risk === 'confirm' || action.type === 'click' && /\b(deploy|publish|delete|submit|send|purchase|pay|revoke|save|create|confirm)\b/i.test(target.text);
-      const description = `${action.type === 'fill' ? 'Fill' : 'Open'} ${target.text || target.id}`;
+      const description = `${action.type === 'fill' ? 'Fill' : action.type === 'append' ? 'Append text to' : 'Click'} ${target.text || target.id}`;
       this.update({ current: { heard: text, matched: target.text || target.id, source: turn.source, state: 'mapping' } });
       const steps = this.view.procedure.steps.map(step => step.status === 'current' ? { ...step, status: 'failed' as const } : step);
       steps.push({ id: action.id, instruction: description, status: 'current' });
       this.update({ procedure: { ...this.view.procedure, steps } });
       this.persist({ procedure: this.view.procedure });
       if (needsConfirmation) {
-        this.update({ pending: { action: { ...action, risk: 'confirm' }, description, requestedAt: Date.now() } });
+        await browser.tabs.sendMessage(this.targetTab()!, { type: 'POINT_AT', id: target.id } satisfies PageRequest);
+        if (generation !== this.generation) return;
+        this.confirmationPage = { tabId: this.targetTab()!, fields: this.fieldsFingerprint(page) };
+        this.update({ pending: { action: { ...action, risk: 'confirm' }, description, requestedAt: Date.now(), preview: [...(page.draftRecipients?.length ? [`Recipients: ${page.draftRecipients.join(', ')}`] : []), ...page.elements.filter(element => element.value && !/password|secret|token|api key/i.test(element.text)).map(element => `${element.text}: ${element.value}`)].join('\n').slice(0, 3000) } });
         this.update({ current: { heard: text, matched: target.text || target.id, source: turn.source, state: 'needs_you' } });
-        this.persist({ pendingConfirmation: this.view.pending, status: 'needs_user' });
+        this.persist({ pendingConfirmation: this.view.pending ? { action: this.view.pending.action, description: this.view.pending.description, requestedAt: this.view.pending.requestedAt } : null, status: 'needs_user' });
         if (this.view.skill) this.update({ skill: { ...this.view.skill, status: 'needs_confirmation' } });
         this.waitForUser();
         this.log(`NEEDS YOU: ${description}`);
@@ -366,7 +444,9 @@ export class SessionCoordinator {
         return;
       }
       await this.execute(action, false, description);
+      await this.continueTask(action, description, generation);
     } catch (error) {
+      this.task = null;
       this.log(error instanceof Error ? error.message : 'Could not process speech.');
       if (turn.source === 'user') this.onReply(error instanceof Error ? error.message : 'Could not process speech.');
       this.failSkill('Planning failed.');
@@ -384,10 +464,13 @@ export class SessionCoordinator {
     this.persist({ pendingConfirmation: null, status: 'acting' });
     this.clearGate();
     await this.execute(pending.action, true, `Confirmed by you: ${pending.description}`);
+    await this.continueTask(pending.action, pending.description, this.generation);
   }
 
   cancel() {
     this.generation++;
+    this.task = null;
+    this.confirmationPage = null;
     if (this.activeSkill) {
       const active = this.activeSkill;
       this.activeSkill = null;
@@ -451,7 +534,9 @@ export class SessionCoordinator {
             break;
           }
         }
-        if (finalUrl !== destination.href) {
+        const observedUrl = finalUrl ? new URL(finalUrl) : null;
+        const reached = finalUrl === destination.href || destination.pathname === '/' && !destination.search && observedUrl?.origin === destination.origin;
+        if (!reached) {
           this.failAction(action, `Expected ${destination.href}, observed ${finalUrl || 'no completed URL'}.`);
           this.log('Navigation did not reach the requested URL. Action paused.');
           return;
@@ -461,10 +546,28 @@ export class SessionCoordinator {
         this.persist({ procedure: this.view.procedure, status: 'listening' });
         this.recordAction(action.id, true, `Navigated to ${finalUrl}`);
         this.log(`VERIFIED: ${description}`);
-        this.onReply(`Done. ${description}.`);
+        this.verifiedReply(description);
       } catch (error) {
         this.failAction(action, error instanceof Error ? error.message : 'Navigation failed.');
         this.log('Navigation failed. Action paused.');
+      }
+      return;
+    }
+    if (action.type === 'append') {
+      if (!tab || action.target !== 'docs_body' || action.risk !== 'prepare') { this.failAction(action, 'Invalid document action.'); return; }
+      try {
+        await browser.tabs.sendMessage(tab, { type: 'POINT_AT', id: 'docs_body' } satisfies PageRequest);
+        if (executionGeneration !== this.generation) return;
+        await appendToGoogleDoc(tab, action.value || '');
+        const steps = this.view.procedure.steps.map(step => step.id === action.id ? { ...step, status: 'completed' as const } : step);
+        this.update({ procedure: { ...this.view.procedure, steps }, ...(this.view.current ? { current: { ...this.view.current, state: 'verified' as const } } : {}) });
+        this.recordAction(action.id, true, 'Document text observed after input.');
+        this.log(`VERIFIED: ${description}`);
+        this.verifiedReply(description);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Document input failed.';
+        this.failAction(action, message);
+        this.onReply(message);
       }
       return;
     }
@@ -480,6 +583,13 @@ export class SessionCoordinator {
       return;
     }
     if (executionGeneration !== this.generation) return;
+    if (confirmed && this.confirmationPage && (tab !== this.confirmationPage.tabId || this.fieldsFingerprint(before) !== this.confirmationPage.fields)) {
+      this.confirmationPage = null;
+      this.failAction(action, 'The page or draft changed after approval was requested.');
+      this.onReply('The draft changed. Review it and ask me to send again. Nothing was submitted.');
+      return;
+    }
+    this.confirmationPage = null;
     const target = before.elements.find(element => element.id === action.target);
     if (!target) {
       this.failAction(action, 'Page changed before the action.');
@@ -502,13 +612,21 @@ export class SessionCoordinator {
       this.log(`ACTION FAILED: ${result.error}`);
       return;
     }
+    const recipientInput = action.type === 'fill' && new URL(before.url).hostname === 'mail.google.com'
+      && /^(to|to recipients|recipients|cc|bcc)(?:\s|$)/i.test(target.text) && target.tag === 'input';
+    if (recipientInput) await commitGmailRecipient(tab);
     let verified = false;
     for (let attempt = 0; attempt < 8 && !verified; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 250));
       try {
         const after = await this.inspect();
-        if (action.type === 'fill') verified = after.elements.find(element => element.id === action.target)?.value === action.value;
-        else verified = after.url !== before.url || after.title !== before.title || JSON.stringify(after.elements) !== JSON.stringify(before.elements);
+        if (action.type === 'fill') {
+          const field = after.elements.find(element => element.id === action.target);
+          verified = recipientInput
+            ? (action.value || '').split(/[,;]/).every(address => after.draftRecipients?.some(recipient => recipient.toLowerCase() === address.trim().toLowerCase()))
+            : field?.value === action.value || field?.tag === 'select' && result?.ok === true && result.detail === 'Field value verified';
+        }
+        else verified = ['textbox', 'combobox'].includes(target.role) && after.elements.find(element => element.id === action.target)?.focused === true || after.url !== before.url || after.title !== before.title || JSON.stringify(after.elements) !== JSON.stringify(before.elements);
       } catch { /* Navigation may briefly replace the content script. */ }
     }
     if (!verified) {
@@ -522,7 +640,7 @@ export class SessionCoordinator {
     this.persist({ procedure: this.view.procedure, status: 'listening' });
     this.recordAction(action.id, true, description);
     this.log(`VERIFIED: ${description}`);
-    this.onReply(`Done. ${description}.`);
+    this.verifiedReply(description);
     if (!this.activeSkill) {
       const learned = stepFromVerifiedAction(action.type, target.role, target.text);
       if (learned) void rememberVerifiedStep(learned, before.url);

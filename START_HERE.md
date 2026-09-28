@@ -2,7 +2,7 @@
 
 ## Install the extension
 
-Download the [Webb 0.3.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.3.1/webb-0.3.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
+Download the [Webb 0.4.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.0/webb-0.4.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. Remove or reload the older Webb installation first. Pin Webb to open its side panel.
 
 To build from source instead:
 
@@ -19,7 +19,7 @@ Select `.output/chrome-mv3` in Chrome. Pin Webb, then click its icon to open the
 
 Open the [practice site](https://webb-five-puce.vercel.app/demo/) and the [spoken walkthrough](https://webb-five-puce.vercel.app/demo/tutorial.html) in separate tabs. On the source tab, choose **Act on instructions**, select the practice site as the target, and press **Start listening**. In Chrome's sharing dialog, choose the source under **Chrome Tab**, turn on **Share tab audio**, and share it. Wait for **Connected**, then play one spoken step at a time. The source can be a tutorial, lecture, meeting, or other audio tab.
 
-To watch normally and ask Webb for help when you need it, choose **Listen and assist**. Source speech stays as context and does not trigger actions. Use TALK to ask questions or request actions on your selected website. Webb replies aloud; turn off Spoken replies in Settings if needed. Speech appears in Webb and stays in this browser after you stop. Use **Copy transcript** and paste into your document. Direct Google Docs document editing is not supported yet.
+To watch normally and ask Webb for help when you need it, choose **Listen and assist**. Source speech stays as context and does not trigger actions. Use TALK to ask questions or request actions on your selected website. Webb replies aloud; turn off Spoken replies in Settings if needed. Speech appears in Webb and stays in this browser after you stop. Use **Copy transcript** and paste into your document. You can also ask Webb to append text to an editable Google Doc. Signed-in Google Docs input still needs a manual acceptance check.
 
 To learn the walkthrough as a skill, turn on **Save verified steps** in Settings before following. Webb saves verified browser steps when you stop FOLLOW. Select a target page and use **Run** in Skills to replay it. Webb asks for new form values and pauses for confirmation before consequential actions.
 

@@ -1,15 +1,20 @@
+import type { PointerCommand } from './pointer-command';
 export type ElementInfo = {
   id: string;
   role: string;
   text: string;
   tag: string;
   value?: string;
+  options?: string[];
+  filled?: boolean;
+  focused?: boolean;
 };
 
 export type PageSnapshot = {
   url: string;
   title: string;
   elements: ElementInfo[];
+  draftRecipients?: string[];
 };
 
 export type TranscriptTurn = {
@@ -39,7 +44,7 @@ export type ProcedureState = {
 
 export type BrowserAction = {
   id: string;
-  type: 'click' | 'fill' | 'scroll' | 'navigate' | 'select';
+  type: 'click' | 'fill' | 'scroll' | 'navigate' | 'select' | 'append';
   url?: string;
   target?: string;
   targetText?: string;
@@ -68,9 +73,11 @@ export type SessionEvent =
 
 export type PageRequest =
   | { type: 'INSPECT' }
+  | { type: 'POINTER'; command: PointerCommand }
+  | { type: 'POINT_AT'; id: string }
   | { type: 'CLICK'; id: string; confirmed?: boolean }
   | { type: 'FILL'; id: string; value: string };
 
 export type PageResponse =
-  | { ok: true; snapshot: PageSnapshot; detail: string }
+  | { ok: true; snapshot: PageSnapshot; detail: string; pointerTarget?: string }
   | { ok: false; error: string };

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { browser } from "wxt/browser";
 import { SessionCoordinator, type SessionView } from "../../src/session";
+import { pointerCommand } from '../../src/pointer-command';
 import { Transcriber } from "../../src/transcriber";
 import type { PageSnapshot, TranscriptTurn } from "../../src/protocol";
 import { beginVideoRun, clearSkillbook, deleteSkill, loadSkillbook, saveRecentAsSkill, SKILLS_KEY, RECENT_RUN_KEY, LAST_VIDEO_KEY } from "../../src/skillbook";
@@ -253,6 +254,7 @@ function App() {
   function handleTurn(turn: TranscriptTurn) {
     if (turn.source === 'user' && speakingRef.current) return;
     if (!turn.final) {
+      if (turn.source === 'user' && /^(stop|there)[.! ]*$/i.test(turn.text.trim())) void coordinator.current?.drivePointer({ kind: 'stop' }).catch(() => {});
       setPartial(
         `${turn.source === "user" ? "YOU" : "SOURCE"}: ${turn.text}`,
       );
@@ -275,6 +277,11 @@ function App() {
       }
     }
     if (turn.source === 'user' && viewRef.current.skill?.status !== 'needs_value') {
+      const pointer = pointerCommand(turn.text);
+      if (pointer && !(viewRef.current.pending && pointer.kind !== 'stop')) {
+        void coordinator.current?.drivePointer(pointer).then(detail => setMessage(detail)).catch(error => setMessage(error instanceof Error ? error.message : 'Pointer action failed.'));
+        return;
+      }
       if (/^(?:what(?:'s| is) playing|what (?:are you|is webb) listening to|which source)[?.!\s]*$/i.test(turn.text.trim())) {
         respond(followedAudio.current && sourceDetailsRef.current
           ? `Listening to ${sourceDetailsRef.current.title}.`
@@ -662,6 +669,7 @@ function App() {
                 disabled={!consented || followStarting}
                 onChange={(event) => {
                   const id = Number(event.target.value) || null;
+                  if (view.busy || view.pending) coordinator.current?.cancel();
                   setTarget(id);
                   setSnapshot(null);
                 }}
@@ -677,7 +685,7 @@ function App() {
               </select>
             </div>
           </div>
-          {followMode === 'actions' && tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">For lecture notes in Google Docs, choose Listen and assist and copy the transcript into your document. Direct document writing is not supported yet.</p>}
+          {tabs.find(tab => tab.id === target)?.url.startsWith('https://docs.google.com/document/') && <p className="section-intro">Ask Webb to append text or rename this document. Document input uses Chrome keyboard control and shows a temporary browser notice. Webb checks the inserted text and stops if it cannot verify it.</p>}
           <button
             className={`follow-button ${followed ? "following" : ""}`}
             onClick={followed ? stopFollow : followCurrentTab}
@@ -705,6 +713,7 @@ function App() {
               <span className="alert-dot" /> NEEDS YOU
             </div>
             <h2>{view.pending.description}</h2>
+            {view.pending.preview && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 180, overflow: "auto" }}>{view.pending.preview}</pre>}
             <p>
               This action requires your approval. Source audio cannot approve
               it.
@@ -900,7 +909,7 @@ function App() {
             </button>
           </div>
         </div>
-        <p className="dock-hint">Your instructions always take priority.</p>
+        <p className="dock-hint">Your instructions always take priority. Steer with move right, a little up, stop, and click.</p>
       </footer>
     </div>
   );

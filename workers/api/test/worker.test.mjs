@@ -272,3 +272,70 @@ test('source-context answers return no action', async () => {
   assert.equal(plan.reason, 'The speaker introduced project settings.');
   assert.equal(plan.action, undefined);
 });
+
+
+test('compound email preparation opens Compose before future fields exist', async () => {
+  const response = await worker.fetch(planRequest('user', 'Compose an email to qa@example.com with subject Webb review and message Please review the release. Then send it.', {
+    page: { ...page, elements: [{ id: 'compose', role: 'button', tag: 'button', text: 'Compose' }] }, taskProgress: [],
+  }), env);
+  const result = await response.json();
+  assert.equal(result.action.target, 'compose');
+  assert.equal(result.action.risk, 'auto');
+  assert.equal(result.continueTask, true);
+});
+
+test('email task requires confirmation after verified recipient, subject, and body', async () => {
+  const response = await worker.fetch(planRequest('user', 'Compose an email to qa@example.com with subject Webb review and message Please review the release. Then send it.', {
+    page: { ...page, elements: [{ id: 'send', role: 'button', tag: 'button', text: 'Send' }] },
+    taskProgress: ['Click Compose', 'Fill To: qa@example.com', 'Fill Subject: Webb review', 'Fill Message body: Please review the release.'],
+  }), env);
+  const result = await response.json();
+  assert.equal(result.action.target, 'send');
+  assert.equal(result.action.risk, 'confirm');
+  assert.equal(result.continueTask, false);
+});
+
+test('document input cannot be mapped to an arbitrary website', async () => {
+  const result = await planWithModel({ source: 'user', text: 'Append a note', page: {
+    ...page, elements: [{ id: 'docs_body', role: 'textbox', tag: 'editor', text: 'Document body' }],
+  } }, { kind: 'instruction', action_type: 'append', target_id: 'docs_body', value: 'Note', reason: 'Append note', confidence: 1, goal: '', continue_task: false });
+  assert.equal(result.action, undefined);
+  assert.equal(result.confidence, 0);
+});
+
+
+test('native dropdown selection uses only an option supplied by the page', async () => {
+  const response = await worker.fetch(planRequest('user', 'Select Deployment in What do you need help with', {
+    page: { ...page, elements: [{ id: 'topic', role: 'combobox', tag: 'select', text: 'What do you need help with?', options: ['Choose a topic', 'Billing', 'Deployment'] }] },
+  }), env);
+  const result = await response.json();
+  assert.equal(result.action.target, 'topic');
+  assert.equal(result.action.value, 'Deployment');
+  assert.equal(result.action.risk, 'prepare');
+});
+
+
+test('named navigation uses a unique visible control without asking for ids', async () => {
+  const response = await worker.fetch(planRequest('user', 'Open Settings', {
+    page: { ...page, elements: [{ id: 'settings', role: 'link', tag: 'a', text: 'Project settings' }, { id: 'reset', role: 'button', tag: 'button', text: 'Reset settings' }] },
+  }), env);
+  const result = await response.json();
+  assert.equal(result.action.target, 'settings');
+  assert.equal(result.action.risk, 'auto');
+});
+
+test('ambiguous named navigation does not choose a random control', async () => {
+  const response = await worker.fetch(planRequest('user', 'Open Settings', {
+    page: { ...page, elements: [{ id: 'project', role: 'link', tag: 'a', text: 'Project settings' }, { id: 'account', role: 'link', tag: 'a', text: 'Account settings' }] },
+  }), env);
+  const result = await response.json();
+  assert.equal(result.action, undefined);
+  assert.equal(result.kind, 'question');
+});
+
+test('saved skill navigation resolves the current equivalent when its label is unchanged', async () => {
+  const response = await worker.fetch(planRequest('user', 'Open the current equivalent of Settings', {
+    page: { ...page, elements: [{ id: 'settings', role: 'link', tag: 'a', text: 'Settings' }] },
+  }), env);
+  assert.equal((await response.json()).action.target, 'settings');
+});

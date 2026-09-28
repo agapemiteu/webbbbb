@@ -14,7 +14,7 @@ The form and team channel are browser-only practice pages. They do not send mess
 
 ## Install the Chrome extension
 
-Download the [Webb 0.3.1 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.3.1/webb-0.3.1.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
+Download the [Webb 0.4.0 extension ZIP](https://github.com/agapemiteu/webb/releases/download/v0.4.0/webb-0.4.0.zip) and extract it. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Remove or reload an older Webb installation first.
 
 To build from source instead:
 
@@ -31,13 +31,24 @@ Then select `.output/chrome-mv3` in Chrome. Pin Webb to open its side panel. The
 
 - In **TALK**, choose a target tab and speak one instruction. For example: "Open Gmail".
 - In **FOLLOW**, open the source tab and choose **Act on instructions** or **Listen and assist**. Select **Start listening**, choose the source under **Chrome Tab**, enable **Share tab audio**, and share it. Play the source after Webb shows Connected.
-- **Act on instructions** maps spoken steps to a separate target website. **Listen and assist** keeps recent source speech as context and waits for you. Ask what the speaker said, or request a draft in a supported web field. Webb answers aloud and can act on your selected website. You can also copy the transcript into any editor. Direct writing into the Google Docs document body is not supported yet.
+- **Act on instructions** maps spoken steps to a separate target website. **Listen and assist** keeps recent source speech as context and waits for you. Ask what the speaker said, or request a draft in a supported web field. Webb answers aloud and can act on your selected website. You can also copy the transcript into any editor. Google Docs append input is available for testing; it still needs the signed-in acceptance check described below.
 - If TALK reports that microphone access was denied, use **Enable microphone in Chrome**. This opens an extension tab where Chrome can show its permission prompt. Then return to Webb and press the mic again.
 - To save a workflow, enable **Save verified steps** in Settings. Webb only offers a skill after it has verified browser actions, and saves it when you stop action mode.
 - To reuse a workflow, choose **Run** under Skills or say "Run skill" followed by its name. Webb matches each step to the current page and asks for fresh form values. If a control is missing, it stops.
 - For email, ask Webb to prepare the recipient, subject, and message. Review the draft and confirm before sending. Use your own test address.
 
 Webb requires direct user approval for sending, submitting, deploying, and other consequential actions. Tutorial audio cannot approve them. Do not use Webb to enter passwords or sensitive information.
+
+## Browser tasks
+
+- **Forms:** dictate values one field at a time, including a dropdown label and option. Webb prepares the form and waits before submitting.
+- **Email:** on an open Gmail tab, say "Compose an email to your-address@example.com with subject Webb test and message Hello from Webb. Then send it." Webb opens Compose, fills the draft, and asks for approval. Review the recipient and message before saying "Go ahead". Changes to the draft invalidate that approval.
+- **Google Docs:** select an editable document and say "Append Webb document test passed to this document." Webb appends at the end and checks for newly observed text. If it cannot verify the result, check the document before repeating. Renaming and menu navigation use the page's visible controls.
+- **Webb pointer:** agent actions show a separate pointer. Say "Move right", "A little up", "Slower", "Stop", or "Click" to guide it. A pointer click on Send or Delete still requires approval. Dragging is not included.
+
+Compound requests run at most eight verified steps, reinspecting after each one. Google Docs typing and Gmail recipient entry use Chrome keyboard control, which requires the debugger permission and shows a temporary Chrome notice. The model cannot issue arbitrary browser code or protocol commands.
+
+Email preparation, approval binding, document input, forms, and pointer steering passed browser fixture checks. **Signed-in Google Docs editing and real Gmail sending are pending manual acceptance in the user's Chrome profile.** Fixtures do not prove those integrations.
 
 ## Develop
 

@@ -46,3 +46,13 @@ For a real email test, say “Open Gmail” or give Webb an HTTPS URL. Then use 
 ## Listen and assist acceptance
 
 Share any source tab with audio and choose Listen and assist. Speech must appear without acting on the selected website. Ask what the source just said; Webb should answer using recent speech. Ask to open Settings while the source remains connected, then ask it to draft a note from the source into the support form's Tell us a little more field. The draft must not submit. Confirm native spoken replies, disable them in Settings, and use Stop speaking and listen to me to regain the microphone. Source speech cannot approve a consequential action.
+
+## Browser task acceptance
+
+- In Gmail, dictate a complete email to an address you control. Verify Compose, recipient chip, subject, and body. Webb must wait before Send. Change the draft while approval is pending and check that the approval is invalidated. Request Send again and approve directly.
+- In an editable blank Google Doc, append a unique sentence. Verify the sentence in the actual document and check Webb reports verified. Repeat with existing content and confirm it is preserved. If input is attempted but unverified, inspect before repeating.
+- Steer the Webb cursor with Move right, Slower, A little up, Stop, and Click. Check it stays in the viewport, stops at its boundary or after ten seconds, and requires approval for destructive controls.
+- Test native dropdowns using their visible labels and options. Missing or ambiguous options must not change a random field.
+- Correct a compound task midway. Old steps must stop. Change the target tab during planning and check it cancels the previous task.
+
+Automated task and document input fixtures validate the extension executor, not authenticated Google product compatibility. Signed-in acceptance remains mandatory before claiming Docs editing or Gmail sending in the live demo.

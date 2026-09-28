@@ -1,10 +1,12 @@
 import type { ElementInfo, PageRequest, PageResponse, PageSnapshot } from '../src/protocol';
 import { browser } from 'wxt/browser';
+import { PagePointer } from '../src/page-pointer';
 
-const selector = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [contenteditable="true"], [role="textbox"]';
+const selector = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [contenteditable="true"], [role="textbox"], [role="menuitem"], [role="menuitemcheckbox"], [role="tab"], [role="combobox"]';
 const ids = new WeakMap<Element, string>();
 const elements = new Map<string, Element>();
 let nextId = 1;
+const pointer = new PagePointer();
 
 function visible(element: Element): boolean {
   const box = element.getBoundingClientRect();
@@ -35,25 +37,38 @@ function snapshot(): PageSnapshot {
     }
     elements.set(id, element);
     const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : tag);
-    const item: ElementInfo = { id, role, text: label(element), tag };
+    const role = element.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : element instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file'].includes(element.type) || element instanceof HTMLTextAreaElement || element instanceof HTMLElement && element.isContentEditable ? 'textbox' : tag === 'select' ? 'combobox' : tag);
+    const item: ElementInfo = { id, role, text: label(element), tag, focused: document.activeElement === element };
     if ((element instanceof HTMLInputElement && element.type !== 'password') || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
       item.value = element.value;
     } else if (element instanceof HTMLElement && element.isContentEditable) {
       item.value = element.textContent || '';
     }
+    if (element instanceof HTMLSelectElement) item.options = [...element.options].map(option => option.text.slice(0, 200)).slice(0, 50);
     found.push(item);
     if (found.length >= 150) break;
   }
-  return { url: location.href, title: document.title, elements: found };
+  if (location.hostname === 'docs.google.com' && /^\/document\/d\//.test(location.pathname)
+    && document.querySelector('.kix-appview-editor')) {
+    elements.set('docs_body', document.querySelector('.kix-appview-editor')!);
+    found.unshift({ id: 'docs_body', role: 'textbox', tag: 'editor', text: 'Google Docs document body' });
+  }
+  return { url: location.href, title: document.title, elements: found.slice(0, 150), draftRecipients: [...document.querySelectorAll('[email]')].map(element => element.getAttribute('email') || '').filter(Boolean).slice(0, 100) };
 }
 
 async function execute(request: PageRequest): Promise<PageResponse> {
   if (request.type === 'INSPECT') return { ok: true, snapshot: snapshot(), detail: 'Page inspected' };
+  if (request.type === 'POINTER') {
+    const hit = pointer.command(request.command)?.closest(selector);
+    const page = snapshot();
+    return { ok: true, snapshot: page, detail: request.command.kind === 'move' ? 'Webb pointer moving. Say stop to stop.' : 'Webb pointer ready.', pointerTarget: hit ? ids.get(hit) : undefined };
+  }
   const element = elements.get(request.id);
   if (!element || !element.isConnected || !visible(element)) {
     return { ok: false, error: 'Element changed. Inspect the page again.' };
   }
+  if (request.type === 'POINT_AT') { await pointer.pointAt(element); return { ok: true, snapshot: snapshot(), detail: 'Webb is pointing at the target.' }; }
+  if (!await pointer.pointAt(element)) return { ok: false, error: 'Action stopped before clicking.' };
   if (request.type === 'CLICK') {
     if (!(element instanceof HTMLElement)) return { ok: false, error: 'Element cannot be clicked.' };
     const actionText = [label(element), element.getAttribute('aria-label'), element.getAttribute('title')].filter(Boolean).join(' ');
@@ -62,6 +77,7 @@ async function execute(request: PageRequest): Promise<PageResponse> {
     if ((risky || submitsForm || element instanceof HTMLInputElement && ['submit', 'reset'].includes(element.type)) && !request.confirmed) {
       return { ok: false, error: 'This action needs a dedicated user confirmation flow.' };
     }
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || element.isContentEditable) element.focus();
     element.click();
     return { ok: true, snapshot: snapshot(), detail: `Clicked ${label(element) || request.id}` };
   }
@@ -91,11 +107,17 @@ async function execute(request: PageRequest): Promise<PageResponse> {
   const prototype = element instanceof HTMLInputElement ? HTMLInputElement.prototype : element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
   if (!setter) return { ok: false, error: 'Field cannot be updated.' };
-  setter.call(element, request.value);
+  let value = request.value;
+  if (element instanceof HTMLSelectElement) {
+    const option = [...element.options].find(item => item.value === value || item.text.trim().toLowerCase() === value.trim().toLowerCase());
+    if (!option) return { ok: false, error: 'That option is not available. Choose one of the listed options.' };
+    value = option.value;
+  }
+  setter.call(element, value);
   element.dispatchEvent(new Event('input', { bubbles: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
   await new Promise(resolve => setTimeout(resolve, 0));
-  if (element.value !== request.value) return { ok: false, error: 'Field rejected the value.' };
+  if (element.value !== value) return { ok: false, error: 'Field rejected the value.' };
   return { ok: true, snapshot: snapshot(), detail: 'Field value verified' };
 }
 
@@ -106,7 +128,7 @@ export default defineContentScript({
     if (scope.__webbContentReady) return;
     scope.__webbContentReady = true;
     browser.runtime.onMessage.addListener((message: PageRequest) => {
-      if (!message || !['INSPECT', 'CLICK', 'FILL'].includes(message.type)) return;
+      if (!message || !['INSPECT', 'CLICK', 'FILL', 'POINT_AT', 'POINTER'].includes(message.type)) return;
       return execute(message).catch((error): PageResponse => ({ ok: false, error: error instanceof Error ? error.message : 'Page action failed' }));
     });
 
